@@ -225,6 +225,8 @@ export default function ReviewDetailPage() {
   const filterNameSearch = searchParams.get('nameSearch') || '';
   const filterSort = searchParams.get('sort') || '';
   const filterPronouns = searchParams.get('pronouns') || '';
+  const filterAttendees = searchParams.get('prioritizeAttending') === 'true';
+  const filterRegion = searchParams.get('region') || '';
 
   // Build query string for filter-aware navigation
   const filterQS = (() => {
@@ -234,22 +236,15 @@ export default function ReviewDetailPage() {
     if (filterNameSearch) qp.set('nameSearch', filterNameSearch);
     if (filterSort) qp.set('sort', filterSort);
     if (filterPronouns) qp.set('pronouns', filterPronouns);
+    if (filterAttendees) qp.set('prioritizeAttending', 'true');
+    if (filterRegion) qp.set('region', filterRegion);
     const s = qp.toString();
     return s ? `?${s}` : '';
   })();
 
   // Initialize data + loading from cache on first render so we never flash a
   // spinner when the prefetch already populated it.
-  const initialCacheKey = `${id}${(() => {
-    const qp = new URLSearchParams();
-    if (filterCategory) qp.set('category', filterCategory);
-    if (filterGuide) qp.set('guide', filterGuide);
-    if (filterNameSearch) qp.set('nameSearch', filterNameSearch);
-    if (filterSort) qp.set('sort', filterSort);
-    if (filterPronouns) qp.set('pronouns', filterPronouns);
-    const s = qp.toString();
-    return s ? `?${s}` : '';
-  })()}`;
+  const initialCacheKey = `${id}${filterQS}`;
   const [data, setData] = useState<ReviewData | null>(
     () => (REVIEW_DATA_CACHE.get(initialCacheKey)?.data as ReviewData | undefined) ?? null
   );
@@ -759,6 +754,8 @@ export default function ReviewDetailPage() {
       if (filterCategory) params.set('category', filterCategory);
       if (filterGuide) params.set('guide', filterGuide);
       if (filterPronouns) params.set('pronouns', filterPronouns);
+      if (filterAttendees) params.set('prioritizeAttending', 'true');
+      if (filterRegion) params.set('region', filterRegion);
       params.set('limit', '50');
       const res = await fetch(`/api/reviews?${params}`);
       if (res.ok) {
