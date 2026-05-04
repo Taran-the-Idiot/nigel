@@ -76,6 +76,13 @@ export async function GET(request: NextRequest) {
     projectWhere.starterProjectId = guide
   }
 
+  if (prioritizeAttending) {
+    projectWhere.user = {
+      ...projectWhere.user,
+      eventPreference: "stasis",
+    }
+  }
+
   // Non-admins should not see pre-reviewed projects (those are waiting for admin finalization)
   if (!isAdmin) {
     projectWhere.submissions = {
