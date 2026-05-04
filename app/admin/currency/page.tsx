@@ -36,6 +36,7 @@ export default function BitsLedgerPage() {
   const [adjustUserId, setAdjustUserId] = useState('');
   const [adjustAmount, setAdjustAmount] = useState('');
   const [adjustNote, setAdjustNote] = useState('');
+  const [adjustPending, setAdjustPending] = useState(false);
   const [adjusting, setAdjusting] = useState(false);
   const [adjustError, setAdjustError] = useState<string | null>(null);
   const [fetchError, setFetchError] = useState<string | null>(null);
@@ -125,6 +126,10 @@ export default function BitsLedgerPage() {
       setAdjustError('User ID or email and a non-zero integer amount are required.');
       return;
     }
+    if (adjustPending && amount < 0) {
+      setAdjustError('Pending grants must be a positive amount.');
+      return;
+    }
 
     setAdjusting(true);
     try {
@@ -135,6 +140,7 @@ export default function BitsLedgerPage() {
           userId: adjustUserId.trim(),
           amount,
           note: adjustNote.trim() || undefined,
+          ...(adjustPending ? { type: 'DESIGN_APPROVED' } : {}),
         }),
       });
 
@@ -142,6 +148,7 @@ export default function BitsLedgerPage() {
         setAdjustUserId('');
         setAdjustAmount('');
         setAdjustNote('');
+        setAdjustPending(false);
         setOffset(0);
         fetchEntries();
       } else {
@@ -202,6 +209,18 @@ export default function BitsLedgerPage() {
               />
             </div>
           </div>
+          <label className="flex items-center gap-2 text-cream-50 text-sm cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={adjustPending}
+              onChange={(e) => setAdjustPending(e.target.checked)}
+              className="size-4 accent-orange-500 cursor-pointer"
+            />
+            <span className="uppercase tracking-wide text-xs">Adding pending bits</span>
+            <span className="text-cream-200 text-xs normal-case tracking-normal">
+              Must be a positive amount. Logs to bits ledger as &quot;<span className="font-mono">DESIGN_APPROVED</span>&quot;.
+            </span>
+          </label>
           {(() => {
             const parsed = parseInt(adjustAmount, 10);
             const amount = isNaN(parsed) ? 0 : parsed;

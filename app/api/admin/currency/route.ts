@@ -101,12 +101,15 @@ export async function POST(request: NextRequest) {
     typeOverride ??
     (amount > 0 ? CurrencyTransactionType.ADMIN_GRANT : CurrencyTransactionType.ADMIN_DEDUCTION)
 
+  const trimmedNote = typeof note === "string" ? note.trim() : ""
+  const finalNote = trimmedNote ? `ADMIN GRANT: ${trimmedNote}` : "ADMIN GRANT"
+
   const entry = await prisma.$transaction(async (tx) => {
     return appendLedgerEntry(tx, {
       userId,
       amount,
       type,
-      note: typeof note === "string" ? note.trim() || undefined : undefined,
+      note: finalNote,
       createdBy: authCheck.session.user.id,
     })
   })
