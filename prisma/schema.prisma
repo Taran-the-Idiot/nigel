@@ -1004,6 +1004,10 @@ model AttendanceCandidate {
   // statusNote / flakeNote — merged 2026-05-05.)
   notes           String?  @db.Text
 
+  // Reason this candidate was added to the sourcing pool. Set at creation
+  // time (typically via bulk-import); read-only in the modal.
+  sourcingReason  String?  @db.Text
+
   // Cached from Attend DB (refreshed on demand or via background job)
   attendInvited            Boolean  @default(false)  // invitation email sent (covers both pending + accepted)
   attendOnboardingStarted  Boolean  @default(false)  // participant row exists in Attend (i.e. they accepted the invite)

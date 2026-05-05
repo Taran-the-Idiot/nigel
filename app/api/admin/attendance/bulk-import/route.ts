@@ -17,6 +17,7 @@ interface ImportItem {
   source?: AttendanceCandidateSource
   outreachStatus?: AttendanceStatus
   notes?: string
+  sourcingReason?: string
   isGirl?: boolean
   homeAirport?: string
   homeCity?: string
@@ -145,6 +146,7 @@ export async function POST(request: NextRequest) {
         isGirl,
         invitedAt,
         notes: it.notes ? it.notes.slice(0, 50_000) : null,
+        sourcingReason: it.sourcingReason ? sanitize(it.sourcingReason).slice(0, 5_000) : null,
         homeAirport: it.homeAirport ? sanitize(it.homeAirport).slice(0, 8).toUpperCase() : null,
         homeCity: it.homeCity ? sanitize(it.homeCity).slice(0, 200) : null,
         flightStipendCents: typeof it.flightStipendCents === "number" ? Math.round(it.flightStipendCents) : null,

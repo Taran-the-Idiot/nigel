@@ -62,6 +62,7 @@ interface CandidateDetail {
     flightCostUpdatedAt: string | null;
     flightStipendCents: number | null;
     notes: string | null;
+    sourcingReason: string | null;
     attendInvited: boolean;
     attendOnboardingStarted: boolean;
     attendFlightBooked: boolean;
@@ -638,6 +639,15 @@ function ModalBody({
             <div className="text-xs text-cream-300 mt-2">Last synced from Attend {relativeTime(data.candidate.attendCachedAt)}</div>
           ) : null}
         </Section>
+
+        {/* Sourcing reason — set at bulk-import time, read-only */}
+        {c.sourcingReason ? (
+          <Section title="Why they were added">
+            <div className="bg-brown-800 px-3 py-2.5 text-sm text-cream-100 whitespace-pre-wrap leading-relaxed">
+              {c.sourcingReason}
+            </div>
+          </Section>
+        ) : null}
 
         {/* Audit log */}
         <div>

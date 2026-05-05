@@ -171,6 +171,7 @@ export async function GET(
       flightCostUpdatedAt: candidate.flightCostUpdatedAt,
       flightStipendCents: candidate.flightStipendCents,
       notes: candidate.notes,
+      sourcingReason: candidate.sourcingReason,
       attendInvited: candidate.attendInvited,
       attendOnboardingStarted: candidate.attendOnboardingStarted,
       attendFlightBooked: candidate.attendFlightBooked,
