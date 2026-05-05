@@ -119,6 +119,14 @@ model User {
   shopOrders           ShopOrder[]
   shopOrderNotes       ShopOrderNote[]      @relation("ShopOrderNoteAuthor")
 
+  // Attendance dashboard relations
+  attendanceCandidate   AttendanceCandidate?     @relation("AttendanceCandidateUser")
+  attendanceOwning      AttendanceCandidate[]    @relation("AttendanceCandidateOwner")
+  attendanceCommsAuthored AttendanceCommsEntry[] @relation("AttendanceCommsAuthor")
+  attendanceAuditActions  AttendanceAuditEntry[] @relation("AttendanceAuditActor")
+  attendanceRemindersCreated AttendanceReminder[] @relation("AttendanceReminderAuthor")
+  attendanceCandidatesCreated AttendanceCandidate[] @relation("AttendanceCandidateCreator")
+
   // Inventory relations
   teamId       String?
   team         Team?        @relation("TeamMembers", fields: [teamId], references: [id])
@@ -925,4 +933,114 @@ model InventorySettings {
   enabled Boolean @default(false)
 
   @@map("inventory_settings")
+}
+
+// ============================================================
+// Attendance dashboard
+// Tracks every candidate (Stasis user OR external) we are working
+// to land at the event. See app/admin/attendance.
+// ============================================================
+
+enum AttendanceStatus {
+  IDENTIFIED      // In the pool, no outreach yet
+  CONTACTED       // Reached out, waiting on them
+  SOFT_YES        // Verbal interest, not yet formally invited
+  CONFIRMED_YES   // Said they will come; usually = invited on Attend
+  DECLINED        // Explicit no, exam conflict, visa denied, etc.
+}
+
+// One row per person we are tracking. May link to a Stasis User
+// (userId set) or be a standalone external candidate (userId null,
+// external* fields populated manually).
+model AttendanceCandidate {
+  id              String   @id @default(cuid())
+
+  // Optional link to a Stasis user (most candidates)
+  userId          String?  @unique
+  user            User?    @relation("AttendanceCandidateUser", fields: [userId], references: [id], onDelete: SetNull)
+
+  // External-only fields (used when userId is null)
+  externalName    String?
+  externalEmail   String?
+  externalSlackId String?
+  externalImage   String?  // optional avatar URL for externals
+
+  // Pipeline
+  outreachStatus  AttendanceStatus @default(IDENTIFIED)
+  ownerId         String?
+  owner           User?    @relation("AttendanceCandidateOwner", fields: [ownerId], references: [id], onDelete: SetNull)
+  snoozedUntil    DateTime?
+
+  // Notes (free text blob alongside the structured comms log)
+  notes           String?  @db.Text
+  flakeNote       String?  // single subjective field
+
+  // Cached from Attend DB (refreshed on demand or via background job)
+  attendInvited      Boolean  @default(false)
+  attendFlightBooked Boolean  @default(false)
+  attendCachedAt     DateTime?
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  createdById     String?
+  createdBy       User?    @relation("AttendanceCandidateCreator", fields: [createdById], references: [id], onDelete: SetNull)
+
+  commsEntries    AttendanceCommsEntry[]
+  auditEntries    AttendanceAuditEntry[]
+  reminders       AttendanceReminder[]
+
+  @@index([outreachStatus])
+  @@index([ownerId])
+  @@index([snoozedUntil])
+  @@map("attendance_candidate")
+}
+
+// Append-only ledger of communications.
+// Each entry is free-form text with author + timestamp; AI does the
+// post-processing to extract structure (dates, sentiment, follow-ups).
+model AttendanceCommsEntry {
+  id          String   @id @default(cuid())
+  candidateId String
+  candidate   AttendanceCandidate @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+  authorId    String
+  author      User     @relation("AttendanceCommsAuthor", fields: [authorId], references: [id], onDelete: Restrict)
+  text        String   @db.Text
+  createdAt   DateTime @default(now())
+
+  @@index([candidateId, createdAt])
+  @@map("attendance_comms_entry")
+}
+
+// Audit trail of field changes on a candidate.
+model AttendanceAuditEntry {
+  id          String   @id @default(cuid())
+  candidateId String
+  candidate   AttendanceCandidate @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+  actorId     String?
+  actor       User?    @relation("AttendanceAuditActor", fields: [actorId], references: [id], onDelete: SetNull)
+  field       String   // 'outreach_status', 'owner_id', 'snoozed_until', etc.
+  oldValue    String?
+  newValue    String?
+  createdAt   DateTime @default(now())
+
+  @@index([candidateId, createdAt])
+  @@map("attendance_audit_entry")
+}
+
+// Reminders created by AI tooling (no UI surface for setting them).
+// The dashboard surfaces "due reminders" as a small badge on cards.
+model AttendanceReminder {
+  id          String   @id @default(cuid())
+  candidateId String
+  candidate   AttendanceCandidate @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+  dueAt       DateTime
+  message     String
+  createdById String
+  createdBy   User     @relation("AttendanceReminderAuthor", fields: [createdById], references: [id], onDelete: Restrict)
+  resolvedAt  DateTime?
+  createdAt   DateTime @default(now())
+
+  @@index([candidateId])
+  @@index([dueAt])
+  @@map("attendance_reminder")
 }

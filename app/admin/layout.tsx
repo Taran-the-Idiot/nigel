@@ -120,6 +120,11 @@ export default function AdminLayout({
                   RSVPs
                 </Link>
               )}
+              {hasPermission(Permission.MANAGE_ATTENDANCE) && (
+                <Link href="/admin/attendance" className={getTabClass('/admin/attendance')}>
+                  Attendance
+                </Link>
+              )}
               {hasPermission(Permission.VIEW_AUDIT_LOG) && (
                 <Link href="/admin/audit" className={getTabClass('/admin/audit')}>
                   Audit

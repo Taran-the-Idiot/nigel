@@ -1,0 +1,141 @@
+'use client';
+
+import { useState, useRef, useEffect, useCallback } from 'react';
+import { Avatar } from './Avatar';
+import { relativeTime } from '../lib/types';
+
+export interface CommsEntry {
+  id: string;
+  text: string;
+  createdAt: string;
+  author: { id: string; name: string | null; email: string; image: string | null };
+}
+
+/**
+ * Free-text ledger. The user types one line of plain prose ("dmed her about
+ * parents, waiting for response"), hits Enter (Cmd+Enter for newline), and the
+ * entry is appended with timestamp + author. AI tooling later post-processes
+ * these to extract dates, follow-ups, sentiment.
+ */
+export function CommsLog({
+  candidateId,
+  entries,
+  onAppend,
+  onDelete,
+}: Readonly<{
+  candidateId: string;
+  entries: CommsEntry[];
+  onAppend: (entry: CommsEntry) => void;
+  onDelete: (id: string) => void;
+}>) {
+  const [draft, setDraft] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  const submit = useCallback(async () => {
+    const text = draft.trim();
+    if (!text || submitting) return;
+    setSubmitting(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/admin/attendance/${candidateId}/comms`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text }),
+      });
+      if (!res.ok) {
+        const j = await res.json().catch(() => ({}));
+        throw new Error(j.error ?? 'Failed to append');
+      }
+      const j = await res.json();
+      onAppend(j.entry);
+      setDraft('');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed');
+    } finally {
+      setSubmitting(false);
+      // re-focus so you can keep typing
+      requestAnimationFrame(() => textareaRef.current?.focus());
+    }
+  }, [draft, submitting, candidateId, onAppend]);
+
+  // Auto-grow the textarea.
+  useEffect(() => {
+    const el = textareaRef.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = el.scrollHeight + 'px';
+  }, [draft]);
+
+  async function handleDelete(id: string) {
+    if (!confirm('Delete this comms entry?')) return;
+    const res = await fetch(`/api/admin/attendance/${candidateId}/comms?entryId=${id}`, { method: 'DELETE' });
+    if (res.ok) onDelete(id);
+  }
+
+  return (
+    <div className="space-y-3">
+      <div className="bg-brown-800/50 border border-brown-700">
+        <textarea
+          ref={textareaRef}
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && !e.shiftKey && !e.metaKey && !e.ctrlKey) {
+              e.preventDefault();
+              submit();
+            }
+          }}
+          placeholder="What just happened? (e.g. dmed her about parents, waiting for response)"
+          rows={1}
+          className="w-full bg-transparent text-cream-50 placeholder:text-cream-400 px-3 py-2.5 text-sm resize-none focus:outline-none"
+          disabled={submitting}
+        />
+        <div className="flex items-center justify-between border-t border-brown-700/60 px-3 py-1.5">
+          <span className="text-[10px] uppercase tracking-wider text-cream-400 font-mono">
+            Enter sends · Shift+Enter newline
+          </span>
+          <button
+            onClick={submit}
+            disabled={!draft.trim() || submitting}
+            className="text-[10px] uppercase tracking-wider text-orange-400 hover:text-orange-300 disabled:opacity-40 disabled:cursor-not-allowed font-mono px-2 py-0.5 cursor-pointer"
+          >
+            {submitting ? 'Logging…' : 'Log'}
+          </button>
+        </div>
+        {error ? <div className="text-xs text-red-400 px-3 pb-2">{error}</div> : null}
+      </div>
+
+      <div className="space-y-2">
+        {entries.length === 0 ? (
+          <div className="text-xs text-cream-400 italic">No comms yet.</div>
+        ) : (
+          entries.map((e) => (
+            <div key={e.id} className="flex gap-3 border-l border-brown-700 pl-3 py-1 group">
+              <Avatar name={e.author.name} email={e.author.email} image={e.author.image} size={24} />
+              <div className="flex-1 min-w-0">
+                <div className="flex items-baseline gap-2">
+                  <span className="text-xs text-cream-100 font-medium">
+                    {e.author.name ?? e.author.email}
+                  </span>
+                  <span className="text-[10px] uppercase tracking-wider text-cream-400 font-mono" title={new Date(e.createdAt).toLocaleString()}>
+                    {relativeTime(e.createdAt)}
+                  </span>
+                  <button
+                    onClick={() => handleDelete(e.id)}
+                    className="opacity-0 group-hover:opacity-100 text-[10px] text-red-400 hover:text-red-300 ml-auto cursor-pointer"
+                    aria-label="Delete entry"
+                  >
+                    ×
+                  </button>
+                </div>
+                <div className="text-sm text-cream-50 whitespace-pre-wrap break-words mt-0.5">{e.text}</div>
+              </div>
+            </div>
+          ))
+        )}
+      </div>
+    </div>
+  );
+}
