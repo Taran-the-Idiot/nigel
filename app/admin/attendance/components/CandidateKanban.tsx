@@ -29,9 +29,8 @@ export function CandidateKanban({
   return (
     <div className="-mx-6 px-6 h-full overflow-x-auto overflow-y-hidden">
       <div className="flex gap-4 min-w-max h-full pb-2">
-        {KANBAN_ORDER.map((col, i) => {
+        {KANBAN_ORDER.map((col) => {
           const items = grouped.get(col) ?? [];
-          const rank = String(i + 1).padStart(2, '0');
           const tone = kanbanColumnTone(col);
           const accent = kanbanColumnAccent(col);
           const hasItems = items.length > 0;
@@ -41,12 +40,9 @@ export function CandidateKanban({
               <div className={`flex items-center justify-between gap-2 mb-3 ${hasItems ? 'bg-brown-800' : 'bg-brown-800/40'}`}>
                 <div className="flex items-stretch gap-2.5 min-w-0">
                   <span className={`block w-1.5 ${hasItems ? accent : 'bg-brown-900'}`} aria-hidden />
-                  <div className="flex items-baseline gap-2 min-w-0 py-2">
-                    <span className={`text-xs font-medium tabular-nums ${hasItems ? tone : 'text-cream-400'}`}>{rank}</span>
-                    <span className="text-xs uppercase tracking-widest text-cream-100 font-medium truncate">
-                      {KANBAN_LABEL[col]}
-                    </span>
-                  </div>
+                  <span className="text-xs uppercase tracking-widest text-cream-100 font-medium truncate self-center py-2">
+                    {KANBAN_LABEL[col]}
+                  </span>
                 </div>
                 <span className={`text-xs font-medium tabular-nums px-3 py-2 ${hasItems ? tone : 'text-cream-400'}`}>{items.length}</span>
               </div>

@@ -59,10 +59,13 @@ export function CandidateTable({
             return (
               <tr
                 key={r.id}
+                data-candidate-row
                 ref={isHighlighted ? highlightedRef : null}
-                onClick={() => onOpen(r.id)}
-                onMouseEnter={() => onHighlight?.(r.id)}
-                className={`cursor-pointer transition-colors ${isHighlighted ? 'bg-orange-500/15 outline outline-2 -outline-offset-2 outline-orange-500/60' : `${zebra} hover:bg-orange-500/5`} ${isSnoozed ? 'opacity-60' : ''}`}
+                onClick={() => {
+                  onHighlight?.(r.id);
+                  onOpen(r.id);
+                }}
+                className={`cursor-pointer transition-[background-color] outline outline-2 -outline-offset-2 ${isHighlighted ? 'bg-orange-500/15 outline-orange-500/60' : `${zebra} outline-transparent hover:bg-orange-500/5`} ${isSnoozed ? 'opacity-60' : ''}`}
               >
                 <td className="px-4 py-3">
                   <div className="flex items-center gap-2.5 min-w-0">
