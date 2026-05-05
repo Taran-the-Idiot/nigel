@@ -7,6 +7,7 @@ import { CandidateKanban } from './components/CandidateKanban';
 import { CandidateModal } from './components/CandidateModal';
 import { AddCandidateDialog } from './components/AddCandidateDialog';
 import { CandidateRow, AdminUser, KANBAN_ORDER, KANBAN_LABEL, kanbanColumnFor, kanbanColumnTone, kanbanColumnAccent } from './lib/types';
+import { ColorSelect } from './components/ColorSelect';
 
 type ViewMode = 'table' | 'kanban';
 
@@ -212,22 +213,32 @@ export default function AttendancePage() {
     return () => window.removeEventListener('keydown', onKey);
   }, [adding, selectedId, filters.q, highlightedId, filtered, view]);
 
+  // Click outside any row clears the highlight
+  useEffect(() => {
+    if (!highlightedId || selectedId || adding) return;
+    function onMouseDown(e: MouseEvent) {
+      const t = e.target;
+      if (!(t instanceof Element)) return;
+      if (t.closest('[data-candidate-row]')) return;
+      setHighlightedId(null);
+    }
+    window.addEventListener('mousedown', onMouseDown);
+    return () => window.removeEventListener('mousedown', onMouseDown);
+  }, [highlightedId, selectedId, adding]);
+
   return (
     <div className="font-sans flex flex-col -mb-8 h-[calc(100dvh-9rem)]">
-      <header className="mb-8 shrink-0">
-        <div className="flex items-baseline gap-3 mb-1.5">
-          <h1 className="text-cream-50 text-2xl font-medium">Attendance</h1>
+      <header className="mb-4 shrink-0 flex flex-wrap items-stretch gap-x-6 gap-y-2">
+        <div className="flex items-baseline gap-3 shrink-0 self-center">
+          <h1 className="text-cream-50 text-xl font-medium">Attendance</h1>
           <span className="text-xs uppercase tracking-widest text-cream-300 font-medium tabular-nums">
             {counts.total} candidate{counts.total === 1 ? '' : 's'}
           </span>
         </div>
-        <p className="text-cream-200 text-sm max-w-prose leading-relaxed">
-          Curated list of every person we&apos;re working to land at the event. Click a row to open their full profile.
-        </p>
 
-        {/* Pipeline strip — instrumented readout of the kanban columns */}
-        <div className="mt-6 flex overflow-x-auto gap-px bg-brown-900">
-          {KANBAN_ORDER.map((col, i) => {
+        {/* Pipeline strip — mirrors the kanban column headers, compressed */}
+        <div className="flex-1 min-w-[480px] flex gap-2 overflow-x-auto">
+          {KANBAN_ORDER.map((col) => {
             const n = counts.byCol.get(col) ?? 0;
             const tone = kanbanColumnTone(col);
             const accent = kanbanColumnAccent(col);
@@ -235,16 +246,15 @@ export default function AttendancePage() {
             return (
               <div
                 key={col}
-                className={`flex-1 min-w-[120px] flex items-center justify-between gap-3 px-3 py-3 ${active ? 'bg-brown-800' : 'bg-brown-800/40'}`}
+                className={`flex-1 min-w-[110px] flex items-stretch justify-between gap-2 ${active ? 'bg-brown-800' : 'bg-brown-800/40'}`}
               >
-                <div className="flex items-center gap-2.5 min-w-0">
-                  <span className={`block w-2 h-5 shrink-0 ${active ? accent : 'bg-brown-900'}`} aria-hidden />
-                  <span className={`text-xs font-medium tabular-nums ${active ? tone : 'text-cream-400'}`}>{String(i + 1).padStart(2, '0')}</span>
-                  <span className="text-xs uppercase tracking-widest text-cream-200 font-medium truncate">
+                <div className="flex items-stretch gap-2.5 min-w-0">
+                  <span className={`block w-1.5 shrink-0 ${active ? accent : 'bg-brown-900'}`} aria-hidden />
+                  <span className="text-xs uppercase tracking-widest text-cream-100 font-medium truncate self-center py-1.5">
                     {KANBAN_LABEL[col]}
                   </span>
                 </div>
-                <span className={`text-base font-medium tabular-nums ${active ? tone : 'text-cream-400'}`}>{n}</span>
+                <span className={`text-xs font-medium tabular-nums px-2.5 py-1.5 ${active ? tone : 'text-cream-400'}`}>{n}</span>
               </div>
             );
           })}
@@ -263,47 +273,51 @@ export default function AttendancePage() {
             className="bg-brown-800 text-cream-50 text-xs pl-7 pr-2.5 py-2 outline-none focus:bg-brown-800 focus:ring-2 focus:ring-orange-500/60 focus:ring-inset w-full"
           />
         </div>
-        <Select
+        <ColorSelect
           value={filters.status}
           onChange={(v) => setFilters((f) => ({ ...f, status: v }))}
           options={[
             { value: '', label: 'All statuses' },
-            { value: 'IDENTIFIED', label: 'Identified' },
-            { value: 'CONTACTED', label: 'Contacted' },
-            { value: 'SOFT_YES', label: 'Soft yes' },
-            { value: 'CONFIRMED_YES', label: 'Confirmed yes' },
-            { value: 'DECLINED', label: 'Declined' },
+            { value: 'IDENTIFIED', label: 'Identified', color: 'cream' },
+            { value: 'CONTACTED', label: 'Contacted', color: 'orange' },
+            { value: 'SOFT_YES', label: 'Soft yes', color: 'yellow' },
+            { value: 'CONFIRMED_YES', label: 'Confirmed yes', color: 'green' },
+            { value: 'DECLINED', label: 'Declined', color: 'red' },
           ]}
         />
-        <Select
+        <ColorSelect
           value={filters.ownerId}
           onChange={(v) => setFilters((f) => ({ ...f, ownerId: v }))}
           options={[
             { value: '', label: 'Any owner' },
-            { value: 'unassigned', label: 'Unassigned' },
-            ...admins.map((a) => ({ value: a.id, label: `Owner: ${a.name?.split(' ')[0] ?? a.email}` })),
+            { value: 'unassigned', label: 'Unassigned', color: 'brown' },
+            ...admins.map((a) => ({
+              value: a.id,
+              label: `Owner: ${a.name?.split(' ')[0] ?? a.email}`,
+              color: ownerColor(a.id),
+            })),
           ]}
         />
-        <Select
+        <ColorSelect
           value={filters.goal}
           onChange={(v) => setFilters((f) => ({ ...f, goal: v }))}
           options={[
             { value: '', label: 'Any goal' },
-            { value: 'stasis', label: 'Goal: Stasis' },
-            { value: 'opensauce', label: 'Goal: Open Sauce' },
-            { value: 'prizes', label: 'Goal: Prizes' },
-            { value: 'null', label: 'Goal: not set' },
+            { value: 'stasis', label: 'Goal: Stasis', color: 'orange' },
+            { value: 'opensauce', label: 'Goal: Open Sauce', color: 'red' },
+            { value: 'prizes', label: 'Goal: Prizes', color: 'yellow' },
+            { value: 'null', label: 'Goal: not set', color: 'brown' },
           ]}
         />
-        <Select
+        <ColorSelect
           value={filters.pronouns}
           onChange={(v) => setFilters((f) => ({ ...f, pronouns: v }))}
           options={[
             { value: '', label: 'Any pronouns' },
-            { value: 'she/her', label: 'she/her' },
-            { value: 'he/him', label: 'he/him' },
-            { value: 'they/them', label: 'they/them' },
-            { value: 'none', label: 'no pronouns set' },
+            { value: 'she/her', label: 'she/her', color: 'pink' },
+            { value: 'he/him', label: 'he/him', color: 'blue' },
+            { value: 'they/them', label: 'they/them', color: 'purple' },
+            { value: 'none', label: 'no pronouns set', color: 'brown' },
           ]}
         />
         <label className="text-xs uppercase tracking-widest text-cream-200 font-medium inline-flex items-center gap-1.5 cursor-pointer bg-brown-800 px-2.5 py-2">
@@ -350,7 +364,7 @@ export default function AttendancePage() {
         )}
       </div>
 
-      <div className="mt-3 pb-3 flex flex-wrap items-center justify-between gap-2 text-xs uppercase tracking-widest text-cream-300 font-medium tabular-nums shrink-0 bg-brown-900">
+      <div className="mt-3 px-3 py-2 flex flex-wrap items-center justify-between gap-2 text-xs uppercase tracking-widest text-cream-300 font-medium tabular-nums shrink-0 bg-brown-950">
         <span>showing {filtered.length} of {rows.length}</span>
         <span className="text-cream-300 normal-case tracking-normal font-normal">
           <Kbd>/</Kbd> search · <Kbd>j</Kbd>/<Kbd>k</Kbd> nav · <Kbd>Enter</Kbd> open · <Kbd>n</Kbd> new · <Kbd>v</Kbd> view · <Kbd>Esc</Kbd> close
@@ -375,19 +389,12 @@ export default function AttendancePage() {
   );
 }
 
-function Select({ value, onChange, options }: Readonly<{
-  value: string; onChange: (v: string) => void;
-  options: Array<{ value: string; label: string }>;
-}>) {
-  return (
-    <select
-      value={value}
-      onChange={(e) => onChange(e.target.value)}
-      className="bg-brown-800 text-cream-50 text-xs px-2 py-2 outline-none focus:ring-2 focus:ring-orange-500/60 focus:ring-inset cursor-pointer"
-    >
-      {options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-    </select>
-  );
+/** Stable color palette for owners — picked deterministically from id. */
+const OWNER_PALETTE = ['emerald', 'blue', 'purple', 'pink', 'orange', 'yellow', 'cream'] as const;
+function ownerColor(id: string): typeof OWNER_PALETTE[number] {
+  let h = 0;
+  for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) >>> 0;
+  return OWNER_PALETTE[h % OWNER_PALETTE.length];
 }
 
 function Kbd({ children }: Readonly<{ children: React.ReactNode }>) {

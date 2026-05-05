@@ -16,6 +16,7 @@
 	--color-brown-800: #403529;
 	/* --color-brown-900: #332F29; */
 	--color-brown-900: #3B3026;
+	--color-brown-950: #2A2219;
 
 
 	/* ---- PRIMARY ---- */
@@ -256,5 +257,26 @@ a:focus-visible {
 
 .shape-pulse {
 	animation: shape-hop-pulse 0.35s ease-out;
+}
+
+@keyframes color-select-slide-in {
+	0%   { transform: translateY(-3px); }
+	100% { transform: translateY(0); }
+}
+@keyframes color-select-bg-in {
+	0%   { opacity: 0; }
+	100% { opacity: 1; }
+}
+.color-select-menu {
+	animation: color-select-slide-in 160ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.color-select-menu-bg {
+	animation: color-select-bg-in 140ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+@media (prefers-reduced-motion: reduce) {
+	.color-select-menu,
+	.color-select-menu-bg {
+		animation: none !important;
+	}
 }
 

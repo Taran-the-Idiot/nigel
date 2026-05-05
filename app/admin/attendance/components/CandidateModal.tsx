@@ -5,7 +5,23 @@ import Link from 'next/link';
 import { Avatar } from './Avatar';
 import { StatusPill, FlagPill } from './StatusPill';
 import { CommsLog, type CommsEntry } from './CommsLog';
+import { ColorSelect, SelectColor } from './ColorSelect';
 import { AttendanceStatus, STATUS_LABEL, AdminUser, relativeTime } from '../lib/types';
+
+const STATUS_COLOR: Record<AttendanceStatus, SelectColor> = {
+  IDENTIFIED: 'cream',
+  CONTACTED: 'orange',
+  SOFT_YES: 'yellow',
+  CONFIRMED_YES: 'green',
+  DECLINED: 'red',
+};
+
+const OWNER_PALETTE: SelectColor[] = ['emerald', 'blue', 'purple', 'pink', 'orange', 'yellow', 'cream'];
+function ownerColor(id: string): SelectColor {
+  let h = 0;
+  for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) >>> 0;
+  return OWNER_PALETTE[h % OWNER_PALETTE.length];
+}
 
 interface CandidateDetail {
   candidate: {
@@ -308,29 +324,36 @@ function ModalBody({
         <Section title="Pipeline">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <Field label="Outreach status">
-              <select
+              <ColorSelect
                 value={c.outreachStatus}
-                onChange={(e) => patch({ outreachStatus: e.target.value }, 'outreachStatus')}
+                onChange={(v) => patch({ outreachStatus: v }, 'outreachStatus')}
                 disabled={savingField === 'outreachStatus'}
-                className="w-full bg-brown-800 text-cream-50 text-sm px-2 py-1.5 outline-none focus:ring-2 focus:ring-orange-500/60 focus:ring-inset"
-              >
-                {STATUS_OPTIONS.map((s) => (
-                  <option key={s} value={s}>{STATUS_LABEL[s]}</option>
-                ))}
-              </select>
+                fullWidth
+                size="md"
+                options={STATUS_OPTIONS.map((s) => ({
+                  value: s,
+                  label: STATUS_LABEL[s],
+                  color: STATUS_COLOR[s],
+                }))}
+              />
             </Field>
             <Field label="Owner">
-              <select
+              <ColorSelect
                 value={c.ownerId ?? ''}
-                onChange={(e) => patch({ ownerId: e.target.value || null }, 'ownerId')}
+                onChange={(v) => patch({ ownerId: v || null }, 'ownerId')}
                 disabled={savingField === 'ownerId'}
-                className="w-full bg-brown-800 text-cream-50 text-sm px-2 py-1.5 outline-none focus:ring-2 focus:ring-orange-500/60 focus:ring-inset"
-              >
-                <option value="">— unassigned —</option>
-                {admins.map((a) => (
-                  <option key={a.id} value={a.id}>{a.name ?? a.email}</option>
-                ))}
-              </select>
+                fullWidth
+                size="md"
+                options={[
+                  { value: '', label: '— unassigned —', color: 'brown' },
+                  ...admins.map((a) => ({
+                    value: a.id,
+                    label: a.name ?? a.email,
+                    color: ownerColor(a.id),
+                    hint: a.name ? a.email : undefined,
+                  })),
+                ]}
+              />
             </Field>
             <Field label="Snooze until">
               <div className="flex gap-2">
