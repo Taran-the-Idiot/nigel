@@ -76,6 +76,12 @@ export default function AttendancePage() {
     lastResult: { scanned: number; updated: number; bumped: number; created: number; errors: number } | null;
     lastRunAt: string | null;
   }>({ state: 'idle', error: null, lastResult: null, lastRunAt: null });
+  const [slackSync, setSlackSync] = useState<{
+    state: 'idle' | 'running' | 'error';
+    error: string | null;
+    lastResult: { invited: number; alreadyIn: number; skippedNoSlackId: number; failed: number } | null;
+    lastRunAt: string | null;
+  }>({ state: 'idle', error: null, lastResult: null, lastRunAt: null });
 
   const searchRef = useRef<HTMLInputElement | null>(null);
 
@@ -166,6 +172,34 @@ export default function AttendancePage() {
       }));
     }
   }, [load]);
+
+  const runSlackSync = useCallback(async () => {
+    setSlackSync((s) => ({ ...s, state: 'running', error: null }));
+    try {
+      const res = await fetch('/api/admin/attendance/sync-slack-channel', { method: 'POST' });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(body?.error ?? `Slack sync failed (${res.status})`);
+      }
+      setSlackSync({
+        state: 'idle',
+        error: null,
+        lastResult: {
+          invited: body.invited ?? 0,
+          alreadyIn: body.alreadyIn ?? 0,
+          skippedNoSlackId: body.skippedNoSlackId ?? 0,
+          failed: body.failed ?? 0,
+        },
+        lastRunAt: body.syncedAt ?? new Date().toISOString(),
+      });
+    } catch (err) {
+      setSlackSync((s) => ({
+        ...s,
+        state: 'error',
+        error: err instanceof Error ? err.message : 'Slack sync failed',
+      }));
+    }
+  }, []);
 
   // Newest server-side cache timestamp across all rows. Used as a fallback
   // "last sync" indicator before the user runs sync-all themselves this session.
@@ -382,6 +416,14 @@ export default function AttendancePage() {
             onRun={runSyncAll}
             onDismissError={() => setSyncAll((s) => ({ ...s, state: 'idle', error: null }))}
           />
+          <SlackSyncButton
+            state={slackSync.state}
+            error={slackSync.error}
+            lastResult={slackSync.lastResult}
+            lastRunAt={slackSync.lastRunAt}
+            onRun={runSlackSync}
+            onDismissError={() => setSlackSync((s) => ({ ...s, state: 'idle', error: null }))}
+          />
           <button
             onClick={() => setAdding(true)}
             className="text-xs uppercase tracking-widest font-medium px-3 py-2 bg-orange-500/15 text-orange-400 hover:bg-orange-500/25 cursor-pointer transition-[background-color] duration-150 active:scale-[0.97]"
@@ -576,6 +618,53 @@ function SyncAllButton({
         disabled={running}
         className="text-xs uppercase tracking-widest font-medium px-3 py-2 bg-brown-800 text-cream-200 hover:text-cream-50 disabled:opacity-40 cursor-pointer transition-[color,background-color] duration-150 active:scale-[0.97]"
       >{running ? 'Syncing…' : 'Resync attend'}</button>
+    </div>
+  );
+}
+
+/**
+ * Adds confirmed-yes + booked-flight candidates into the attendees Slack
+ * channel. Additive only — never removes existing members.
+ */
+function SlackSyncButton({
+  state, error, lastResult, lastRunAt, onRun, onDismissError,
+}: Readonly<{
+  state: 'idle' | 'running' | 'error';
+  error: string | null;
+  lastResult: { invited: number; alreadyIn: number; skippedNoSlackId: number; failed: number } | null;
+  lastRunAt: string | null;
+  onRun: () => void;
+  onDismissError: () => void;
+}>) {
+  const running = state === 'running';
+  return (
+    <div className="flex items-center gap-2">
+      {error ? (
+        <div className="flex items-center gap-1 text-xs text-red-400">
+          <span className="max-w-[18rem] truncate" title={error}>{error}</span>
+          <button
+            type="button"
+            onClick={onDismissError}
+            aria-label="Dismiss error"
+            className="text-cream-300 hover:text-cream-50 cursor-pointer px-1"
+          >×</button>
+        </div>
+      ) : lastResult ? (
+        <span className="text-xs text-cream-300 tabular-nums" aria-live="polite">
+          Slack: {lastRunAt ? relativeTime(lastRunAt) : '—'}
+          {' · '}<span className="text-green-400">{lastResult.invited} added</span>
+          {' · '}{lastResult.alreadyIn} already in
+          {lastResult.skippedNoSlackId > 0 ? <> · {lastResult.skippedNoSlackId} no slack</> : null}
+          {lastResult.failed > 0 ? <span className="text-red-400"> · {lastResult.failed} failed</span> : null}
+        </span>
+      ) : null}
+      <button
+        type="button"
+        onClick={onRun}
+        disabled={running}
+        title="Add CONFIRMED_YES + BOOKED_FLIGHT candidates to the attendees Slack channel (additive only)"
+        className="text-xs uppercase tracking-widest font-medium px-3 py-2 bg-brown-800 text-cream-200 hover:text-cream-50 disabled:opacity-40 cursor-pointer transition-[color,background-color] duration-150 active:scale-[0.97]"
+      >{running ? 'Inviting…' : 'Sync slack'}</button>
     </div>
   );
 }
