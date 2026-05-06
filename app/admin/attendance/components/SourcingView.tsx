@@ -241,16 +241,24 @@ function LocationCell({ row }: Readonly<{ row: CandidateRow }>) {
   const label = locationLabel(row);
   if (!label) return <span className="text-cream-400">—</span>;
   const region = locationRegion(row);
-  const isDomestic = region === 'us' || region === 'ca';
   const lines = fullAddressLines(row);
   const richer = lines.length > 1 || (lines[0] && lines[0] !== label);
 
+  const markerClass =
+    region === 'us' ? 'bg-orange-500'
+    : region === 'ca' ? 'bg-orange-700'
+    : 'bg-brown-800';
+  const markerTitle =
+    region === 'us' ? 'United States — domestic flight'
+    : region === 'ca' ? 'Canada — domestic flight'
+    : 'International';
+
   const inner = (
-    <span className={`inline-flex items-center gap-1.5 ${isDomestic ? 'text-cream-50 font-medium' : 'text-cream-300'}`}>
+    <span className="inline-flex items-center gap-1.5 text-cream-300">
       <span
         aria-hidden
-        className={`inline-block size-1.5 ${isDomestic ? 'bg-orange-500' : 'bg-cream-500/40'}`}
-        title={isDomestic ? (region === 'us' ? 'United States — domestic flight' : 'Canada — domestic flight') : 'International'}
+        className={`inline-block size-1.5 ${markerClass}`}
+        title={markerTitle}
       />
       {label}
     </span>
