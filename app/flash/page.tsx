@@ -169,7 +169,12 @@ export default function BadgeConfiguratorPage() {
     if (!port.readable) return;
 
     const textDecoder = new TextDecoderStream();
-    readableStreamClosedRef.current = port.readable.pipeTo(textDecoder.writable);
+    // TS variance quirk — TextDecoderStream.writable is WritableStream<BufferSource>
+    // in modern DOM types, while port.readable is ReadableStream<Uint8Array>.
+    // The two are pipe-compatible at runtime; cast through unknown to silence.
+    readableStreamClosedRef.current = port.readable.pipeTo(
+      textDecoder.writable as unknown as WritableStream<Uint8Array>
+    );
     const reader = textDecoder.readable.getReader();
     readerRef.current = reader;
 
