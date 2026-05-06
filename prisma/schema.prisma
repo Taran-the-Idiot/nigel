@@ -946,7 +946,8 @@ enum AttendanceStatus {
   IDENTIFIED      // In the sourcing pool — under consideration, not yet pulled into the active funnel
   CONTACTED       // We've decided to invite them; outreach sent (or imminent)
   SOFT_YES        // Verbal interest, not yet committed
-  CONFIRMED_YES   // Said yes; ready to book / has booked flight
+  CONFIRMED_YES   // Said yes; ready to book a flight
+  BOOKED_FLIGHT   // Travel confirmed — Attend has a flight, or admin manually confirmed
   DECLINED        // They said no
   SHELVED         // We decided not to pursue (distinct from they-said-no)
 }
@@ -1011,7 +1012,7 @@ model AttendanceCandidate {
   // Cached from Attend DB (refreshed on demand or via background job)
   attendInvited            Boolean  @default(false)  // invitation email sent (covers both pending + accepted)
   attendOnboardingStarted  Boolean  @default(false)  // participant row exists in Attend (i.e. they accepted the invite)
-  attendFlightBooked       Boolean  @default(false)
+  attendFlightBooked       Boolean  @default(false)  // synced from Attend's travel_legs (inbound flight code/confirmation present)
   attendStatus             String?  // raw participant_events.status from Attend ('complete', 'in_progress', 'awaiting_guardian'); 'invited' is synthetic for the pending-invitation case
   attendCity               String?
   attendState              String?

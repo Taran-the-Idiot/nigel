@@ -222,7 +222,7 @@ export async function POST(request: NextRequest) {
               externalEmail: p.email,
               externalSlackId: p.slackId,
             }),
-        outreachStatus: p.attendFlightBooked ? "CONFIRMED_YES" : "CONTACTED",
+        outreachStatus: p.attendFlightBooked ? "BOOKED_FLIGHT" : "CONTACTED",
         source: "DISCRETION",
         isGirl: p.isGirl,
         invitedAt: p.invitedAt,

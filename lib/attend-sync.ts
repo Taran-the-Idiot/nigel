@@ -1,5 +1,5 @@
 import type { PrismaClient } from "@/app/generated/prisma/client"
-import { lookupAttendByEmails, lookupPendingInvitesByEmails, getAttendPool, type AttendStatus } from "./attend-db"
+import { lookupAttendByEmails, lookupPendingInvitesByEmails, getAttendPool, STASIS_EVENT_ID, type AttendStatus } from "./attend-db"
 
 /**
  * Three-state UI bucket for the Attend lifecycle.
@@ -230,11 +230,31 @@ export async function syncCandidatesAgainstAttend(
                 desired.invitedAt = sourceInvitedAt
               }
 
-              // Auto-bump from sourcing — anyone in Attend (participant row OR
-              // invitation row) shouldn't sit in the sourcing pool.
-              const willAutoBump = (!!attend?.found || !!invite) && c.outreachStatus === "IDENTIFIED"
-              if (willAutoBump) {
-                desired.outreachStatus = "CONTACTED"
+              // Transition-based auto-bumps. Each fires only on the
+              // false→true transition so users can manually move someone
+              // back without the sync re-bumping them on every run.
+              const wasInAttend = c.attendInvited || c.attendOnboardingStarted
+              const isInAttend = !!attend?.found || !!invite
+              const newlyInAttend = !wasInAttend && isInAttend
+
+              const wasFlightBooked = c.attendFlightBooked
+              const isFlightBooked = !!attend?.hasFlight
+              const newlyFlightBooked = !wasFlightBooked && isFlightBooked
+
+              const BUMP_FROM_FOR_FLIGHT = new Set([
+                "IDENTIFIED", "CONTACTED", "SOFT_YES", "CONFIRMED_YES",
+              ])
+              let bumpFrom: string | null = null
+              let bumpTo: string | null = null
+              if (newlyFlightBooked && BUMP_FROM_FOR_FLIGHT.has(c.outreachStatus)) {
+                bumpFrom = c.outreachStatus
+                bumpTo = "BOOKED_FLIGHT"
+              } else if (newlyInAttend && c.outreachStatus === "IDENTIFIED") {
+                bumpFrom = "IDENTIFIED"
+                bumpTo = "CONTACTED"
+              }
+              if (bumpTo) {
+                desired.outreachStatus = bumpTo
                 if (!c.invitedAt && !desired.invitedAt) {
                   desired.invitedAt = sourceInvitedAt ?? now
                 }
@@ -278,14 +298,14 @@ export async function syncCandidatesAgainstAttend(
               data.attendCachedAt = now
               await tx.attendanceCandidate.update({ where: { id: c.id }, data })
 
-              if (willAutoBump) {
+              if (bumpFrom && bumpTo) {
                 await tx.attendanceAuditEntry.create({
                   data: {
                     candidateId: c.id,
                     actorId: null,
                     field: "outreachStatus",
-                    oldValue: "IDENTIFIED",
-                    newValue: "CONTACTED",
+                    oldValue: bumpFrom,
+                    newValue: bumpTo,
                   },
                 })
                 bumped += 1
@@ -343,4 +363,185 @@ export async function syncOneCandidateAgainstAttend(
   actorLabel: "cron" | "manual" | "invite"
 ): Promise<AttendSyncSummary> {
   return syncCandidatesAgainstAttend(prisma, { candidateIds: [candidateId], actorLabel })
+}
+
+export interface AttendImportSummary {
+  created: number
+  skippedExisting: number
+  attendParticipants: number
+  attendPendingInvites: number
+  errors: Array<{ stage: string; message: string }>
+}
+
+/**
+ * Pull every Stasis-event participant + invitation from the Attend platform DB
+ * and create AttendanceCandidate rows for any that aren't already tracked.
+ * Idempotent on userId / externalEmail. Used by /sync-all so admins don't
+ * have to manually invoke a separate "backfill" endpoint when new people
+ * appear in Attend.
+ */
+export async function importNewAttendCandidates(
+  prisma: PrismaClient
+): Promise<AttendImportSummary> {
+  const errors: AttendImportSummary["errors"] = []
+  const pool = getAttendPool()
+  if (!pool) {
+    return { created: 0, skippedExisting: 0, attendParticipants: 0, attendPendingInvites: 0, errors: [{ stage: "env", message: "READONLY_ATTEND_DATABASE_URL not set" }] }
+  }
+
+  let participants: Array<{
+    email: string; legal_first_name: string; legal_last_name: string;
+    preferred_name: string | null; pronouns: string | null;
+    city: string | null; state: string | null; country: string | null;
+    slack_user_id: string | null; status: string; created_at: Date; pe_id: string;
+    has_flight: boolean
+  }> = []
+  let invitations: Array<{ email: string; created_at: Date; accepted_at: Date | null }> = []
+  try {
+    const [pRes, iRes] = await Promise.all([
+      pool.query<typeof participants[number]>(
+        `SELECT lower(p.email) AS email,
+                p.legal_first_name, p.legal_last_name, p.preferred_name,
+                p.pronouns, p.city, p.state, p.country_of_residence AS country,
+                p.slack_user_id,
+                pe.status, pe.created_at, pe.id AS pe_id,
+                EXISTS (
+                  SELECT 1
+                    FROM travels t
+                    JOIN travel_legs tl ON tl.travel_id = t.id
+                   WHERE t.participant_event_id = pe.id
+                     AND t.direction = 'inbound'
+                     AND (tl.flight_code IS NOT NULL OR tl.confirmation_code IS NOT NULL)
+                ) AS has_flight
+           FROM participants p
+           JOIN participant_events pe ON pe.participant_id = p.id
+          WHERE pe.event_id = $1`,
+        [STASIS_EVENT_ID]
+      ),
+      pool.query<typeof invitations[number]>(
+        `SELECT lower(email) AS email, created_at, accepted_at
+           FROM invitations
+          WHERE event_id = $1`,
+        [STASIS_EVENT_ID]
+      ),
+    ])
+    participants = pRes.rows
+    invitations = iRes.rows
+  } catch (err) {
+    return {
+      created: 0, skippedExisting: 0, attendParticipants: 0, attendPendingInvites: 0,
+      errors: [{ stage: "lookup", message: err instanceof Error ? err.message : String(err) }],
+    }
+  }
+
+  const participantEmails = new Set(participants.map((r) => r.email))
+  const inviteOnly = invitations.filter((i) => !participantEmails.has(i.email))
+  const allEmails = [...participants.map((r) => r.email), ...inviteOnly.map((i) => i.email)]
+  if (allEmails.length === 0) {
+    return { created: 0, skippedExisting: 0, attendParticipants: 0, attendPendingInvites: 0, errors }
+  }
+
+  const stasisUsers = await prisma.user.findMany({
+    where: { email: { in: allEmails, mode: "insensitive" } },
+    select: { id: true, email: true, attendRegisteredAt: true },
+  })
+  const userByEmail = new Map(stasisUsers.map((u) => [u.email.toLowerCase(), u]))
+
+  const existingByUserId = new Set(
+    (await prisma.attendanceCandidate.findMany({
+      where: { userId: { in: stasisUsers.map((u) => u.id) } },
+      select: { userId: true },
+    })).map((c) => c.userId!)
+  )
+  const existingByExternalEmail = new Set(
+    (await prisma.attendanceCandidate.findMany({
+      where: { externalEmail: { in: allEmails } },
+      select: { externalEmail: true },
+    })).map((c) => c.externalEmail!.toLowerCase())
+  )
+
+  const now = new Date()
+  let created = 0
+  let skippedExisting = 0
+
+  // Participants
+  for (const r of participants) {
+    const user = userByEmail.get(r.email)
+    const userId = user?.id ?? null
+    if (userId && existingByUserId.has(userId)) { skippedExisting += 1; continue }
+    if (existingByExternalEmail.has(r.email)) { skippedExisting += 1; continue }
+    const composedName = (r.preferred_name?.trim()) || `${r.legal_first_name} ${r.legal_last_name}`.trim()
+    const isGirl = r.pronouns && /she\/her/i.test(r.pronouns) ? true : null
+    try {
+      await prisma.attendanceCandidate.create({
+        data: {
+          ...(userId
+            ? { user: { connect: { id: userId } } }
+            : { externalName: composedName, externalEmail: r.email, externalSlackId: r.slack_user_id }),
+          outreachStatus: r.has_flight ? "BOOKED_FLIGHT" : "CONTACTED",
+          source: "DISCRETION",
+          isGirl,
+          invitedAt: r.created_at,
+          attendInvited: true,
+          attendOnboardingStarted: true,
+          attendStatus: r.status,
+          attendFlightBooked: r.has_flight,
+          attendCity: r.city,
+          attendState: r.state,
+          attendCountry: r.country,
+          homeCity: r.city,
+          attendCachedAt: now,
+        },
+      })
+      if (userId && !user?.attendRegisteredAt) {
+        await prisma.user.update({ where: { id: userId }, data: { attendRegisteredAt: now } })
+      }
+      created += 1
+    } catch (err) {
+      if (errors.length < 50) {
+        errors.push({ stage: "create-participant", message: err instanceof Error ? err.message : String(err) })
+      }
+    }
+  }
+
+  // Pending invites
+  for (const inv of inviteOnly) {
+    const user = userByEmail.get(inv.email)
+    const userId = user?.id ?? null
+    if (userId && existingByUserId.has(userId)) { skippedExisting += 1; continue }
+    if (existingByExternalEmail.has(inv.email)) { skippedExisting += 1; continue }
+    try {
+      await prisma.attendanceCandidate.create({
+        data: {
+          ...(userId
+            ? { user: { connect: { id: userId } } }
+            : { externalName: inv.email.split("@")[0], externalEmail: inv.email }),
+          outreachStatus: "CONTACTED",
+          source: "DISCRETION",
+          invitedAt: inv.created_at,
+          attendInvited: true,
+          attendOnboardingStarted: false,
+          attendStatus: "invited",
+          attendFlightBooked: false,
+          attendCachedAt: now,
+        },
+      })
+      if (userId && !user?.attendRegisteredAt) {
+        await prisma.user.update({ where: { id: userId }, data: { attendRegisteredAt: now } })
+      }
+      created += 1
+    } catch (err) {
+      if (errors.length < 50) {
+        errors.push({ stage: "create-pending", message: err instanceof Error ? err.message : String(err) })
+      }
+    }
+  }
+
+  return {
+    created,
+    skippedExisting,
+    attendParticipants: participants.length,
+    attendPendingInvites: inviteOnly.length,
+    errors,
+  }
 }

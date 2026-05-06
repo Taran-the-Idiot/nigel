@@ -6,7 +6,7 @@ import { sanitize } from "@/lib/sanitize"
 import { AttendanceStatus, AttendanceCandidateSource } from "@/app/generated/prisma/enums"
 
 const VALID_SOURCES: AttendanceCandidateSource[] = ["STASIS_USER", "REVIEWER_INCENTIVE", "EXTERNAL_HC", "DISCRETION"]
-const VALID_STATUSES: AttendanceStatus[] = ["IDENTIFIED", "CONTACTED", "SOFT_YES", "CONFIRMED_YES", "DECLINED", "SHELVED"]
+const VALID_STATUSES: AttendanceStatus[] = ["IDENTIFIED", "CONTACTED", "SOFT_YES", "CONFIRMED_YES", "BOOKED_FLIGHT", "DECLINED", "SHELVED"]
 
 interface ImportItem {
   userId?: string

@@ -50,15 +50,63 @@ export interface AttendStatus {
   hasFlight?: boolean
 }
 
+/**
+ * One direction of a candidate's travel (inbound or outbound). Combines
+ * fields from `travels` (mode-agnostic — bus locations, train stations, car
+ * origin address, "other" details, visa info) with the first
+ * `travel_legs` row (flight-specific — flight_code, confirmation, airports).
+ *
+ * Different `mode` values populate different field sets:
+ *   - flight  → flightCode, confirmationCode, departureAirport, arrivalAirport
+ *   - train   → trainDepartureStation, trainArrivalStation, departureStation,
+ *               arrivalStation, departureCity, arrivalCity
+ *   - bus     → busDepartureLocation, busArrivalLocation, carrier
+ *   - car     → originAddress, departureCity, arrivalCity
+ *   - other   → otherDetails, notes
+ *
+ * UI should treat any non-null field as displayable rather than hard-coding
+ * per-mode rendering.
+ */
 export interface AttendTravelLeg {
   mode: string | null
   carrier: string | null
+  notes: string | null
+
+  // Times — `travels` row carries them for non-flight modes; `travel_legs`
+  // carries them for flights. Code below merges leg-level times into the
+  // top-level fields when present.
+  departureTime: string | null
+  arrivalTime: string | null
+  expectedArrivalTime: string | null
+
+  // Flight
+  flightNumber: string | null
   flightCode: string | null
   confirmationCode: string | null
   departureAirport: string | null
   arrivalAirport: string | null
-  departureTime: string | null
-  arrivalTime: string | null
+
+  // Train
+  trainDepartureStation: string | null
+  trainArrivalStation: string | null
+  departureStation: string | null
+  arrivalStation: string | null
+  departureCity: string | null
+  arrivalCity: string | null
+
+  // Bus
+  busDepartureLocation: string | null
+  busArrivalLocation: string | null
+
+  // Car / other
+  originAddress: string | null
+  otherDetails: string | null
+
+  // Misc
+  isUnaccompaniedMinor: boolean | null
+  passportNationality: string | null
+  visaType: string | null
+  visaNumber: string | null
 }
 
 /**
@@ -101,7 +149,8 @@ export async function lookupAttendByEmails(
 
   if (rows.length === 0) return result
 
-  // Travel data for these participant_events (inbound/outbound)
+  // Travel data for these participant_events (inbound/outbound). Mode-agnostic
+  // fields come from `travels`, flight-specific fields from `travel_legs[0]`.
   const peIds = rows.map((r) => r.participant_event_id)
   const travels = await pool.query<{
     participant_event_id: string
@@ -109,19 +158,48 @@ export async function lookupAttendByEmails(
     visa_required: boolean | null
     visa_status: string | null
     travel_id: string
+    mode: string | null
+    carrier: string | null
+    notes: string | null
+    t_departure_time: string | null
+    t_arrival_time: string | null
+    expected_arrival_time: string | null
+    flight_number: string | null
+    train_departure_station: string | null
+    train_arrival_station: string | null
+    departure_station: string | null
+    arrival_station: string | null
+    departure_city: string | null
+    arrival_city: string | null
+    bus_departure_location: string | null
+    bus_arrival_location: string | null
+    origin_address: string | null
+    other_details: string | null
+    is_unaccompanied_minor: boolean | null
+    passport_nationality: string | null
+    visa_type: string | null
+    visa_number: string | null
     flight_code: string | null
     confirmation_code: string | null
     departure_airport: string | null
     arrival_airport: string | null
-    departure_time: string | null
-    arrival_time: string | null
-    mode: string | null
-    carrier: string | null
+    leg_departure_time: string | null
+    leg_arrival_time: string | null
   }>(
     `SELECT t.participant_event_id, t.direction, t.visa_required, t.visa_status, t.id AS travel_id,
-            t.mode, t.carrier,
+            t.mode, t.carrier, t.notes,
+            t.departure_time AS t_departure_time, t.arrival_time AS t_arrival_time,
+            t.expected_arrival_time,
+            t.flight_number,
+            t.train_departure_station, t.train_arrival_station,
+            t.departure_station, t.arrival_station,
+            t.departure_city, t.arrival_city,
+            t.bus_departure_location, t.bus_arrival_location,
+            t.origin_address, t.other_details,
+            t.is_unaccompanied_minor, t.passport_nationality,
+            t.visa_type, t.visa_number,
             tl.flight_code, tl.confirmation_code, tl.departure_airport, tl.arrival_airport,
-            tl.departure_time, tl.arrival_time
+            tl.departure_time AS leg_departure_time, tl.arrival_time AS leg_arrival_time
        FROM travels t
        LEFT JOIN LATERAL (
          SELECT * FROM travel_legs
@@ -146,12 +224,30 @@ export async function lookupAttendByEmails(
     const leg: AttendTravelLeg = {
       mode: t.mode,
       carrier: t.carrier,
+      notes: t.notes,
+      // Prefer leg-level times (flights) over travel-level times (other modes).
+      departureTime: t.leg_departure_time ?? t.t_departure_time,
+      arrivalTime: t.leg_arrival_time ?? t.t_arrival_time,
+      expectedArrivalTime: t.expected_arrival_time,
+      flightNumber: t.flight_number,
       flightCode: t.flight_code,
       confirmationCode: t.confirmation_code,
       departureAirport: t.departure_airport,
       arrivalAirport: t.arrival_airport,
-      departureTime: t.departure_time,
-      arrivalTime: t.arrival_time,
+      trainDepartureStation: t.train_departure_station,
+      trainArrivalStation: t.train_arrival_station,
+      departureStation: t.departure_station,
+      arrivalStation: t.arrival_station,
+      departureCity: t.departure_city,
+      arrivalCity: t.arrival_city,
+      busDepartureLocation: t.bus_departure_location,
+      busArrivalLocation: t.bus_arrival_location,
+      originAddress: t.origin_address,
+      otherDetails: t.other_details,
+      isUnaccompaniedMinor: t.is_unaccompanied_minor,
+      passportNationality: t.passport_nationality,
+      visaType: t.visa_type,
+      visaNumber: t.visa_number,
     }
     if (t.direction === 'inbound') existing.inbound = leg
     else if (t.direction === 'outbound') existing.outbound = leg

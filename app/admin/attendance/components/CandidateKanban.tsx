@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { Avatar } from './Avatar';
 import { SOURCE_LABEL, SOURCE_FULL_LABEL, CandidateRow, KanbanColumn, AttendanceStatus, AttendanceCandidateSource, AdminUser, KANBAN_ORDER, KANBAN_LABEL, kanbanColumnFor, kanbanColumnTone, kanbanColumnAccent, relativeTime, touchHealth, locationLabel, ownerColor, ownerNameTextClass } from '../lib/types';
 import { ContextMenu, MenuItem } from './ContextMenu';
@@ -22,7 +22,36 @@ const COLUMN_TO_STATUS: Partial<Record<KanbanColumn, AttendanceStatus>> = {
   CONTACTED: 'CONTACTED',
   SOFT_YES: 'SOFT_YES',
   CONFIRMED_YES: 'CONFIRMED_YES',
+  BOOKED_FLIGHT: 'BOOKED_FLIGHT',
 };
+
+interface TravelLeg {
+  mode: string | null;
+  carrier: string | null;
+  notes: string | null;
+  departureTime: string | null;
+  arrivalTime: string | null;
+  expectedArrivalTime: string | null;
+  flightNumber: string | null;
+  flightCode: string | null;
+  confirmationCode: string | null;
+  departureAirport: string | null;
+  arrivalAirport: string | null;
+  trainDepartureStation: string | null;
+  trainArrivalStation: string | null;
+  departureStation: string | null;
+  arrivalStation: string | null;
+  departureCity: string | null;
+  arrivalCity: string | null;
+  busDepartureLocation: string | null;
+  busArrivalLocation: string | null;
+  originAddress: string | null;
+  otherDetails: string | null;
+  isUnaccompaniedMinor: boolean | null;
+  passportNationality: string | null;
+  visaType: string | null;
+  visaNumber: string | null;
+}
 
 interface InviteTarget {
   candidateId: string;
@@ -57,6 +86,18 @@ export function CandidateKanban({
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; items: MenuItem[] } | null>(null);
   const [inviteTarget, setInviteTarget] = useState<InviteTarget | null>(null);
   const [linkTarget, setLinkTarget] = useState<LinkTarget | null>(null);
+  const [pendingFlightConfirm, setPendingFlightConfirm] = useState<{
+    id: string;
+    name: string | null;
+    attendStatus: string | null;
+    loadingTravel: boolean;
+    travel: {
+      inbound: TravelLeg | null;
+      outbound: TravelLeg | null;
+      visaRequired: boolean | null;
+      visaStatus: string | null;
+    } | null;
+  } | null>(null);
 
   const grouped = useMemo(() => {
     const m = new Map<string, CandidateRow[]>();
@@ -91,6 +132,34 @@ export function CandidateKanban({
     const row = rows.find((r) => r.id === id);
     if (!row) return;
     if (row.outreachStatus === nextStatus) return;
+
+    // Dropping into BOOKED_FLIGHT is silent only when Attend has a real
+    // inbound flight. Otherwise show the confirmation modal — even when
+    // onboarding is "complete", because that just means *some* travel is
+    // set (could be a train/bus/no-flight mode), and we want the admin to
+    // eyeball the data and decide if it's good enough.
+    if (col === 'BOOKED_FLIGHT' && !row.attendFlightBooked) {
+      setPendingFlightConfirm({
+        id, name: row.name, attendStatus: row.attendStatus,
+        loadingTravel: true, travel: null,
+      });
+      fetch(`/api/admin/attendance/${id}/attend-live`)
+        .then((r) => r.ok ? r.json() : null)
+        .then((j) => {
+          setPendingFlightConfirm((prev) => prev && prev.id === id ? {
+            ...prev,
+            loadingTravel: false,
+            travel: j?.attend?.travel ?? null,
+          } : prev);
+        })
+        .catch(() => {
+          setPendingFlightConfirm((prev) => prev && prev.id === id ? {
+            ...prev, loadingTravel: false,
+          } : prev);
+        });
+      return;
+    }
+
     onMove?.(id, nextStatus);
   }
 
@@ -140,6 +209,7 @@ export function CandidateKanban({
         ['CONTACTED', 'Reached out'],
         ['SOFT_YES', 'Soft yes'],
         ['CONFIRMED_YES', 'Confirmed yes'],
+        ['BOOKED_FLIGHT', 'Booked flight'],
         ['SHELVED', 'Shelved'],
         ['DECLINED', 'Declined'],
       ] as const
@@ -338,6 +408,147 @@ export function CandidateKanban({
           onLinked={onReload}
         />
       ) : null}
+
+      {pendingFlightConfirm ? (
+        <div
+          className="fixed inset-0 z-[60] flex items-center justify-center"
+          onClick={() => setPendingFlightConfirm(null)}
+        >
+          <div className="attendance-modal-backdrop absolute inset-0 bg-black/70" />
+          <div
+            className="attendance-modal-drawer relative bg-brown-900 outline outline-1 outline-cream-200/15 shadow-[0_8px_24px_rgba(0,0,0,0.5)] p-5 max-w-md w-full mx-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="text-cream-50 text-sm font-medium mb-1">
+              Mark flight booked for {pendingFlightConfirm.name ?? 'this candidate'}?
+            </div>
+            <div className="text-cream-300 text-xs mb-3 leading-relaxed">
+              Attend doesn&apos;t have a confirmed inbound flight on file
+              {pendingFlightConfirm.attendStatus
+                ? <> (onboarding status: <span className="text-cream-100">{pendingFlightConfirm.attendStatus}</span>)</>
+                : null}. Look over what they&apos;ve set below and decide if it&apos;s enough.
+            </div>
+            <FlightConfirmTravelPanel
+              loading={pendingFlightConfirm.loadingTravel}
+              travel={pendingFlightConfirm.travel}
+            />
+            <div className="flex justify-end gap-2 mt-4">
+              <button
+                type="button"
+                onClick={() => setPendingFlightConfirm(null)}
+                className="text-xs uppercase tracking-widest font-medium text-cream-200 hover:text-cream-50 bg-brown-800 px-3 py-2 cursor-pointer"
+              >Cancel</button>
+              <button
+                type="button"
+                onClick={() => {
+                  const id = pendingFlightConfirm.id;
+                  setPendingFlightConfirm(null);
+                  onMove?.(id, 'BOOKED_FLIGHT');
+                }}
+                className="text-xs uppercase tracking-widest font-medium text-orange-300 bg-orange-500/20 hover:bg-orange-500/30 px-3 py-2 cursor-pointer"
+              >Mark booked</button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+/** Compact travel readout for the BOOKED_FLIGHT confirmation modal. Shows
+ *  whatever Attend has on file (mode, carrier, codes, airports, times, visa)
+ *  so the admin can decide if it's enough to call "booked." */
+function FlightConfirmTravelPanel({
+  loading, travel,
+}: Readonly<{
+  loading: boolean;
+  travel: {
+    inbound: TravelLeg | null;
+    outbound: TravelLeg | null;
+    visaRequired: boolean | null;
+    visaStatus: string | null;
+  } | null;
+}>) {
+  if (loading) {
+    return <div className="h-16 bg-cream-600/15 animate-pulse" aria-label="Loading travel info" />;
+  }
+  const hasInbound = !!travel?.inbound;
+  const hasOutbound = !!travel?.outbound;
+  if (!hasInbound && !hasOutbound) {
+    return (
+      <div className="text-xs bg-brown-800 px-3 py-2.5 text-cream-300 italic">
+        No travel info recorded in Attend yet.
+      </div>
+    );
+  }
+  return (
+    <div className="space-y-2">
+      {hasInbound ? <TravelLegRow direction="Inbound" leg={travel!.inbound!} /> : null}
+      {hasOutbound ? <TravelLegRow direction="Outbound" leg={travel!.outbound!} /> : null}
+      {travel?.visaRequired ? (
+        <div className="text-xs text-cream-300">
+          <span className="text-cream-400">Visa:</span> {travel.visaStatus ?? 'required'}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+/** Render every populated field on a travel leg as a labeled key/value row.
+ *  Different `mode` values populate different fields (flight vs train vs bus
+ *  vs car vs other), so we discover what's there rather than hardcoding. */
+function TravelLegRow({ direction, leg }: Readonly<{ direction: string; leg: TravelLeg }>) {
+  const fmtDate = (s: string | null) => s ? new Date(s).toLocaleString() : null;
+
+  // Order matters — most distinguishing fields first per mode.
+  const ordered: Array<[string, string | null]> = [
+    ['Mode', leg.mode],
+    ['Carrier', leg.carrier],
+    // Flight
+    ['Flight', leg.flightCode ?? leg.flightNumber],
+    ['Confirmation', leg.confirmationCode],
+    ['From airport', leg.departureAirport],
+    ['To airport', leg.arrivalAirport],
+    // Train
+    ['From station', leg.trainDepartureStation ?? leg.departureStation],
+    ['To station', leg.trainArrivalStation ?? leg.arrivalStation],
+    // Bus
+    ['From (bus)', leg.busDepartureLocation],
+    ['To (bus)', leg.busArrivalLocation],
+    // Cities (train, car)
+    ['From city', leg.departureCity],
+    ['To city', leg.arrivalCity],
+    // Car / other
+    ['Origin address', leg.originAddress],
+    ['Other details', leg.otherDetails],
+    // Times
+    ['Departs', fmtDate(leg.departureTime)],
+    ['Arrives', fmtDate(leg.arrivalTime)],
+    ['Expected arrival', fmtDate(leg.expectedArrivalTime)],
+    // Misc
+    ['Unaccompanied minor', leg.isUnaccompaniedMinor ? 'yes' : null],
+    ['Passport', leg.passportNationality],
+    ['Visa type', leg.visaType],
+    ['Visa number', leg.visaNumber],
+    ['Notes', leg.notes],
+  ];
+  const populated = ordered.filter(([, v]) => v != null && v !== '');
+
+  return (
+    <div className="text-xs bg-brown-800 px-3 py-2.5">
+      <div className="text-cream-300 uppercase tracking-widest text-xs font-medium mb-1.5">{direction}</div>
+      {populated.length === 0 ? (
+        <div className="text-cream-300 italic">No fields set on this leg.</div>
+      ) : (
+        <dl className="grid grid-cols-[max-content_1fr] gap-x-3 gap-y-0.5">
+          {populated.map(([label, value]) => (
+            <Fragment key={label}>
+              <dt className="text-cream-400">{label}</dt>
+              <dd className="text-cream-100 break-words">{value}</dd>
+            </Fragment>
+          ))}
+        </dl>
+      )}
     </div>
   );
 }

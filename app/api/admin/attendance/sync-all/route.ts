@@ -2,18 +2,21 @@ import { NextRequest, NextResponse } from "next/server"
 import prisma from "@/lib/prisma"
 import { requirePermission } from "@/lib/admin-auth"
 import { Permission } from "@/lib/permissions"
-import { syncCandidatesAgainstAttend } from "@/lib/attend-sync"
+import { syncCandidatesAgainstAttend, importNewAttendCandidates } from "@/lib/attend-sync"
 import { getAttendPool } from "@/lib/attend-db"
 
 export const dynamic = "force-dynamic"
-export const maxDuration = 60
+export const maxDuration = 120
 
 /**
  * POST /api/admin/attendance/sync-all
  *
- * Manual full-sweep refresh of every candidate's cached attend* fields.
- * Same code path as the hourly cron — this is the "Resync attend" button on
- * the dashboard. Returns counts so the UI can render a status sub-line.
+ * 1. Imports any Stasis-event participants/invitations from Attend that
+ *    aren't already tracked as AttendanceCandidates (idempotent).
+ * 2. Refreshes cached attend* fields on every existing candidate row.
+ *
+ * Returns the union of both summaries so the dashboard can show "N created
+ * / M updated / K bumped" in one shot.
  */
 export async function POST(_request: NextRequest) {
   const authCheck = await requirePermission(Permission.MANAGE_ATTENDANCE)
@@ -26,6 +29,18 @@ export async function POST(_request: NextRequest) {
     )
   }
 
-  const result = await syncCandidatesAgainstAttend(prisma, { actorLabel: "manual" })
-  return NextResponse.json({ ...result, syncedAt: new Date().toISOString() })
+  const importResult = await importNewAttendCandidates(prisma)
+  const syncResult = await syncCandidatesAgainstAttend(prisma, { actorLabel: "manual" })
+
+  return NextResponse.json({
+    created: importResult.created,
+    importSkipped: importResult.skippedExisting,
+    attendParticipants: importResult.attendParticipants,
+    attendPendingInvites: importResult.attendPendingInvites,
+    scanned: syncResult.scanned,
+    updated: syncResult.updated,
+    bumped: syncResult.bumped,
+    errors: [...importResult.errors, ...syncResult.errors],
+    syncedAt: new Date().toISOString(),
+  })
 }

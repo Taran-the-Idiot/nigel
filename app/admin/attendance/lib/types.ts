@@ -48,6 +48,7 @@ export type AttendanceStatus =
   | "CONTACTED"
   | "SOFT_YES"
   | "CONFIRMED_YES"
+  | "BOOKED_FLIGHT"
   | "DECLINED"
   | "SHELVED"
 
@@ -62,6 +63,7 @@ export const STATUS_LABEL: Record<AttendanceStatus, string> = {
   CONTACTED: "Reached out",
   SOFT_YES: "Soft yes",
   CONFIRMED_YES: "Confirmed yes",
+  BOOKED_FLIGHT: "Booked flight",
   DECLINED: "Declined",
   SHELVED: "Shelved",
 }
@@ -173,11 +175,10 @@ export interface AdminUser {
 
 /** Returns the active-funnel column for a row, or null when not in the funnel. */
 export function kanbanColumnFor(
-  row: Pick<CandidateRow, "outreachStatus" | "attendFlightBooked">
+  row: Pick<CandidateRow, "outreachStatus">
 ): KanbanColumn | null {
   const s = row.outreachStatus
   if (s === "IDENTIFIED" || s === "DECLINED" || s === "SHELVED") return null
-  if (row.attendFlightBooked && s === "CONFIRMED_YES") return "BOOKED_FLIGHT"
   return s
 }
 
@@ -185,6 +186,7 @@ export function statusTone(status: AttendanceStatus): string {
   switch (status) {
     case "DECLINED":      return "text-red-400"
     case "SHELVED":       return "text-cream-400"
+    case "BOOKED_FLIGHT": return "text-emerald-300"
     case "CONFIRMED_YES": return "text-green-500"
     case "SOFT_YES":      return "text-yellow-500"
     case "CONTACTED":     return "text-orange-400"
@@ -214,6 +216,7 @@ export function statusBg(status: AttendanceStatus): string {
   switch (status) {
     case "DECLINED":      return "bg-red-500/20 text-red-300"
     case "SHELVED":       return "bg-cream-200/10 text-cream-300 line-through decoration-cream-300/40"
+    case "BOOKED_FLIGHT": return "bg-emerald-500/20 text-emerald-300"
     case "CONFIRMED_YES": return "bg-green-500/20 text-green-400"
     case "SOFT_YES":      return "bg-yellow-500/25 text-yellow-300"
     case "CONTACTED":     return "bg-orange-500/20 text-orange-300"

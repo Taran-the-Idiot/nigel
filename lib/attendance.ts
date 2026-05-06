@@ -10,6 +10,7 @@ export const ATTENDANCE_STATUS_LABELS: Record<AttendanceStatus, string> = {
   CONTACTED: "Reached out",
   SOFT_YES: "Soft yes",
   CONFIRMED_YES: "Confirmed yes",
+  BOOKED_FLIGHT: "Booked flight",
   DECLINED: "Declined",
   SHELVED: "Shelved",
 }

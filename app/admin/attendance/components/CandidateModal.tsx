@@ -14,6 +14,7 @@ const STATUS_COLOR: Record<AttendanceStatus, SelectColor> = {
   CONTACTED: 'orange',
   SOFT_YES: 'yellow',
   CONFIRMED_YES: 'green',
+  BOOKED_FLIGHT: 'emerald',
   DECLINED: 'red',
   SHELVED: 'brown',
 };
@@ -121,7 +122,7 @@ interface CandidateDetail {
   reminders: Array<{ id: string; dueAt: string; message: string }>;
 }
 
-const STATUS_OPTIONS: AttendanceStatus[] = ['IDENTIFIED', 'CONTACTED', 'SOFT_YES', 'CONFIRMED_YES', 'DECLINED', 'SHELVED'];
+const STATUS_OPTIONS: AttendanceStatus[] = ['IDENTIFIED', 'CONTACTED', 'SOFT_YES', 'CONFIRMED_YES', 'BOOKED_FLIGHT', 'DECLINED', 'SHELVED'];
 const SOURCE_OPTIONS: AttendanceCandidateSource[] = ['STASIS_USER', 'REVIEWER_INCENTIVE', 'EXTERNAL_HC', 'DISCRETION'];
 const GIRL_OPTIONS: Array<{ value: string; label: string; color: SelectColor }> = [
   { value: 'unknown', label: 'Unknown', color: 'cream' },
@@ -255,14 +256,14 @@ export function CandidateModal({
         {loading && !data ? (
           <div className="p-6 space-y-4">
             <div className="flex gap-4">
-              <div className="w-12 h-12 bg-brown-800 animate-pulse" />
+              <div className="w-12 h-12 bg-cream-600/25 animate-pulse" />
               <div className="flex-1 space-y-2">
-                <div className="h-5 w-1/3 bg-brown-800 animate-pulse" />
-                <div className="h-3 w-1/2 bg-brown-800/60 animate-pulse" />
+                <div className="h-5 w-1/3 bg-cream-600/25 animate-pulse" />
+                <div className="h-3 w-1/2 bg-cream-600/20 animate-pulse" />
               </div>
             </div>
             {[0, 1, 2, 3].map((i) => (
-              <div key={i} className="h-20 bg-brown-800/40 animate-pulse" />
+              <div key={i} className="h-20 bg-cream-600/15 animate-pulse" />
             ))}
           </div>
         ) : error || !data ? (

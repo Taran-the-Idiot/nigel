@@ -73,7 +73,7 @@ export default function AttendancePage() {
   const [syncAll, setSyncAll] = useState<{
     state: 'idle' | 'running' | 'error';
     error: string | null;
-    lastResult: { scanned: number; updated: number; bumped: number; errors: number } | null;
+    lastResult: { scanned: number; updated: number; bumped: number; created: number; errors: number } | null;
     lastRunAt: string | null;
   }>({ state: 'idle', error: null, lastResult: null, lastRunAt: null });
 
@@ -152,6 +152,7 @@ export default function AttendancePage() {
           scanned: body.scanned ?? 0,
           updated: body.updated ?? 0,
           bumped: body.bumped ?? 0,
+          created: body.created ?? 0,
           errors: Array.isArray(body.errors) ? body.errors.length : 0,
         },
         lastRunAt: body.syncedAt ?? new Date().toISOString(),
@@ -440,6 +441,7 @@ export default function AttendancePage() {
               { value: 'CONTACTED', label: 'Reached out', color: 'orange' },
               { value: 'SOFT_YES', label: 'Soft yes', color: 'yellow' },
               { value: 'CONFIRMED_YES', label: 'Confirmed yes', color: 'green' },
+              { value: 'BOOKED_FLIGHT', label: 'Booked flight', color: 'emerald' },
               { value: 'DECLINED', label: 'Declined', color: 'red' },
               { value: 'SHELVED', label: 'Shelved', color: 'brown' },
             ]}
@@ -489,7 +491,7 @@ export default function AttendancePage() {
         {loading ? (
           <div className="flex flex-col gap-px bg-brown-900 h-full overflow-hidden">
             {Array.from({ length: 8 }).map((_, i) => (
-              <div key={i} className="h-12 bg-brown-800/60 animate-pulse shrink-0" />
+              <div key={i} className="h-12 bg-cream-600/20 animate-pulse shrink-0" />
             ))}
           </div>
         ) : view === 'kanban' ? (
@@ -538,7 +540,7 @@ function SyncAllButton({
 }: Readonly<{
   state: 'idle' | 'running' | 'error';
   error: string | null;
-  lastResult: { scanned: number; updated: number; bumped: number; errors: number } | null;
+  lastResult: { scanned: number; updated: number; bumped: number; created: number; errors: number } | null;
   lastRunAt: string | null;
   onRun: () => void;
   onDismissError: () => void;
@@ -558,7 +560,9 @@ function SyncAllButton({
         </div>
       ) : lastResult ? (
         <span className="text-xs text-cream-300 tabular-nums" aria-live="polite">
-          Last sync: {lastRunAt ? relativeTime(lastRunAt) : '—'} · {lastResult.updated} updated · {lastResult.bumped} bumped
+          Last sync: {lastRunAt ? relativeTime(lastRunAt) : '—'}
+          {lastResult.created > 0 ? <> · <span className="text-green-400">{lastResult.created} created</span></> : null}
+          {' · '}{lastResult.updated} updated · {lastResult.bumped} bumped
           {lastResult.errors > 0 ? <span className="text-red-400"> · {lastResult.errors} errors</span> : null}
         </span>
       ) : lastRunAt ? (
