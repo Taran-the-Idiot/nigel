@@ -1,6 +1,7 @@
 'use client';
 
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { Avatar } from './Avatar';
 import { SOURCE_LABEL, SOURCE_FULL_LABEL, CandidateRow, KanbanColumn, AttendanceStatus, AttendanceCandidateSource, AdminUser, KANBAN_ORDER, KANBAN_LABEL, kanbanColumnFor, kanbanColumnTone, kanbanColumnAccent, relativeTime, touchHealth, locationLabel, fullAddressLines, ownerColor, ownerNameTextClass } from '../lib/types';
 import { ContextMenu, MenuItem } from './ContextMenu';
@@ -592,6 +593,7 @@ function KanbanCard({
 }>) {
   const lastIso = row.lastComms?.createdAt ?? null;
   const health = touchHealth(lastIso);
+  const [quickCommsAnchor, setQuickCommsAnchor] = useState<{ x: number; y: number; width: number; height: number } | null>(null);
   const ownerFirst = row.owner?.name?.split(' ')[0] ?? row.owner?.email ?? null;
   const sourceValue = row.source === 'REVIEWER_INCENTIVE' && row.derivedStats.reviewerWeekCount != null
     ? `Reviewer · ${row.derivedStats.reviewerWeekCount}/30`
@@ -747,16 +749,158 @@ function KanbanCard({
         )}
         <Tooltip content={
           lastIso
-            ? <>Last communication log entry on this candidate ({relativeTime(lastIso)}). Dot color: <span className="text-green-400">green</span> ≤3d, <span className="text-yellow-400">yellow</span> ≤7d, <span className="text-red-400">red</span> &gt;7d.</>
-            : <>No communication log entries yet. Add one in the candidate modal under <span className="text-cream-100">Communication log</span>.</>
+            ? <>Last communication log entry on this candidate ({relativeTime(lastIso)}). Click to add a new entry. Dot color: <span className="text-green-400">green</span> ≤3d, <span className="text-yellow-400">yellow</span> ≤7d, <span className="text-red-400">red</span> &gt;7d.</>
+            : <>No communication log entries yet. Click to add one.</>
         }>
-          <div className="flex items-center gap-1.5 text-cream-300 tabular-nums shrink-0 ">
+          <button
+            type="button"
+            data-status-edit
+            data-no-drag
+            onMouseDown={(e) => e.stopPropagation()}
+            onClick={(e) => {
+              e.stopPropagation();
+              const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+              setQuickCommsAnchor({ x: rect.left, y: rect.top, width: rect.width, height: rect.height });
+            }}
+            className="flex items-center gap-1.5 text-cream-300 hover:text-orange-200 tabular-nums shrink-0 px-1.5 -mx-1.5 py-0.5 -my-0.5 hover:bg-orange-500/10 transition-colors duration-100 cursor-pointer"
+          >
             <span className={`inline-block w-1.5 h-1.5 rounded-full ${TOUCH_DOT[health]} ${health === 'fresh' ? 'attendance-dot-fresh' : ''}`} aria-hidden />
             <span>{lastIso ? relativeTime(lastIso) : 'no contact'}</span>
-          </div>
+          </button>
         </Tooltip>
       </div>
+
+      {quickCommsAnchor ? (
+        <QuickCommsPopover
+          candidateId={row.id}
+          anchor={quickCommsAnchor}
+          onClose={() => setQuickCommsAnchor(null)}
+          onSaved={onReload}
+        />
+      ) : null}
     </div>
+  );
+}
+
+/**
+ * Click-to-log popover anchored to the comms-status display on a kanban card.
+ * Lets the admin append a free-text comms entry without opening the full modal.
+ * Enter sends, Shift+Enter newline, Esc closes. Click-outside closes.
+ */
+function QuickCommsPopover({
+  candidateId, anchor, onClose, onSaved,
+}: Readonly<{
+  candidateId: string;
+  anchor: { x: number; y: number; width: number; height: number };
+  onClose: () => void;
+  onSaved: () => void;
+}>) {
+  const [draft, setDraft] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const popRef = useRef<HTMLDivElement>(null);
+  const taRef = useRef<HTMLTextAreaElement>(null);
+
+  useEffect(() => {
+    requestAnimationFrame(() => taRef.current?.focus());
+  }, []);
+
+  useEffect(() => {
+    function onDown(e: MouseEvent) {
+      if (popRef.current && !popRef.current.contains(e.target as Node)) onClose();
+    }
+    function onKey(e: KeyboardEvent) { if (e.key === 'Escape') onClose(); }
+    document.addEventListener('mousedown', onDown);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onDown);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [onClose]);
+
+  async function submit() {
+    const text = draft.trim();
+    if (!text || submitting) return;
+    setSubmitting(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/admin/attendance/${candidateId}/comms`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text }),
+      });
+      if (!res.ok) {
+        const j = await res.json().catch(() => ({}));
+        throw new Error(j.error ?? 'Failed to log');
+      }
+      onSaved();
+      onClose();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed');
+      setSubmitting(false);
+    }
+  }
+
+  const width = 320;
+  const padding = 8;
+  const vw = typeof window !== 'undefined' ? window.innerWidth : 1024;
+  const vh = typeof window !== 'undefined' ? window.innerHeight : 768;
+  let x = anchor.x + anchor.width - width;
+  if (x < padding) x = padding;
+  if (x + width > vw - padding) x = vw - width - padding;
+  const placeAbove = anchor.y > 180;
+  const style: React.CSSProperties = placeAbove
+    ? { left: x, bottom: vh - anchor.y + 6, width }
+    : { left: x, top: anchor.y + anchor.height + 6, width };
+
+  return createPortal(
+    <div
+      ref={popRef}
+      style={style}
+      className="fixed z-[10000] bg-brown-900 border-2 border-orange-500/60 shadow-[0_8px_24px_rgba(0,0,0,0.5)]"
+      onMouseDown={(e) => e.stopPropagation()}
+      onClick={(e) => e.stopPropagation()}
+    >
+      <textarea
+        ref={taRef}
+        value={draft}
+        onChange={(e) => {
+          setDraft(e.target.value);
+          const el = taRef.current;
+          if (el) {
+            el.style.height = 'auto';
+            el.style.height = el.scrollHeight + 'px';
+          }
+        }}
+        onKeyDown={(e) => {
+          e.stopPropagation();
+          if (e.key === 'Escape') onClose();
+          if (e.key === 'Enter' && !e.shiftKey && !e.metaKey && !e.ctrlKey) {
+            e.preventDefault();
+            submit();
+          }
+        }}
+        placeholder="Log a comms update…"
+        rows={2}
+        disabled={submitting}
+        className="w-full bg-transparent text-cream-50 placeholder:text-cream-400 placeholder:italic px-3 py-2.5 text-sm resize-none focus:outline-none focus-visible:outline-none"
+      />
+      <div className="flex items-center justify-between bg-black/15 px-3 py-1.5">
+        <span className="text-xs uppercase tracking-widest font-medium text-cream-300">
+          Enter sends · Esc cancels
+        </span>
+        <button
+          type="button"
+          onClick={submit}
+          disabled={!draft.trim() || submitting}
+          className="text-xs uppercase tracking-widest font-medium text-orange-400 hover:text-orange-300 disabled:opacity-40 disabled:cursor-not-allowed px-3 py-1 cursor-pointer"
+        >
+          {submitting ? 'Logging…' : 'Log'}
+        </button>
+      </div>
+      {error ? <div className="text-xs text-red-400 px-3 pb-2">{error}</div> : null}
+    </div>,
+    document.body
   );
 }
 
@@ -821,7 +965,7 @@ function NotesField({
           setEditing(true);
         }}
         title="Click to edit"
-        className={`w-full text-left text-sm leading-snug min-h-[1.75rem] px-2 py-1 -mx-2 cursor-text whitespace-pre-wrap break-words select-text transition-[background-color,border-color] duration-100 border-2 border-transparent hover:border-cream-200/20 hover:bg-brown-900 ${
+        className={`w-full text-left text-sm leading-snug min-h-[1.75rem] px-2 py-1 cursor-text whitespace-pre-wrap break-words select-text transition-[background-color,border-color] duration-100 border-2 border-transparent hover:border-cream-200/20 hover:bg-brown-900 ${
           value ? 'text-cream-100' : 'text-cream-400 italic'
         }`}
       >
@@ -862,7 +1006,7 @@ function NotesField({
         disabled={saving}
         placeholder="Add notes…"
         rows={1}
-        className="w-full bg-brown-900 text-cream-50 text-sm px-2 py-1.5 outline-none focus:ring-2 focus:ring-orange-500/60 focus:ring-inset resize-none leading-snug placeholder:text-cream-400 placeholder:italic"
+        className="w-full bg-brown-900 text-cream-50 text-sm px-2 py-1 border-2 border-orange-500/60 outline-none resize-none leading-snug placeholder:text-cream-400 placeholder:italic"
       />
     </div>
   );
