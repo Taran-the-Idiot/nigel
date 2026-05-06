@@ -7,7 +7,7 @@ import { StatusPill, FlagPill } from './StatusPill';
 import { CommsLog, type CommsEntry } from './CommsLog';
 import { ColorSelect, SelectColor } from './ColorSelect';
 import { SourceBadge } from './SourceBadge';
-import { AttendanceStatus, AttendanceCandidateSource, STATUS_LABEL, SOURCE_FULL_LABEL, AdminUser, DerivedStats, DecryptedUserAddress, relativeTime, formatDollars } from '../lib/types';
+import { AttendanceStatus, AttendanceCandidateSource, STATUS_LABEL, SOURCE_FULL_LABEL, AdminUser, DerivedStats, DecryptedUserAddress, relativeTime, formatDollars, ownerColor } from '../lib/types';
 
 const STATUS_COLOR: Record<AttendanceStatus, SelectColor> = {
   IDENTIFIED: 'cream',
@@ -26,12 +26,6 @@ const SOURCE_COLOR: Record<AttendanceCandidateSource, SelectColor> = {
   DISCRETION: 'cream',
 };
 
-const OWNER_PALETTE: SelectColor[] = ['emerald', 'blue', 'purple', 'pink', 'orange', 'yellow', 'cream'];
-function ownerColor(id: string): SelectColor {
-  let h = 0;
-  for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) >>> 0;
-  return OWNER_PALETTE[h % OWNER_PALETTE.length];
-}
 
 interface CandidateDetail {
   candidate: {
@@ -146,7 +140,6 @@ export function CandidateModal({
   const [error, setError] = useState<string | null>(null);
   const [savingField, setSavingField] = useState<string | null>(null);
   const [showAudit, setShowAudit] = useState(false);
-  const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [attendSync, setAttendSync] = useState<{ syncing: boolean; error: string | null }>({ syncing: false, error: null });
   const attendSyncAbortRef = useRef<AbortController | null>(null);
 
@@ -233,19 +226,6 @@ export function CandidateModal({
     }
   }
 
-  async function deleteCandidate() {
-    setConfirmingDelete(true);
-  }
-
-  async function performDelete() {
-    setConfirmingDelete(false);
-    const res = await fetch(`/api/admin/attendance/${candidateId}`, { method: 'DELETE' });
-    if (res.ok) {
-      onMutated();
-      onClose();
-    }
-  }
-
   return (
     <div className="fixed inset-0 z-50 flex justify-end" onClick={onClose}>
       <div className="attendance-modal-backdrop absolute inset-0 bg-black/60" />
@@ -276,7 +256,6 @@ export function CandidateModal({
             patch={patch}
             syncAttend={syncAttend}
             attendSync={attendSync}
-            deleteCandidate={deleteCandidate}
             onClose={onClose}
             onAppendComms={(entry) => setData((d) => d ? { ...d, commsEntries: [entry, ...d.commsEntries] } : d)}
             onDeleteComms={(id) => setData((d) => d ? { ...d, commsEntries: d.commsEntries.filter((c) => c.id !== id) } : d)}
@@ -286,19 +265,6 @@ export function CandidateModal({
           />
         )}
       </div>
-      {confirmingDelete ? (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center" onClick={() => setConfirmingDelete(false)}>
-          <div className="attendance-modal-backdrop absolute inset-0 bg-black/70" />
-          <div className="attendance-modal-drawer relative bg-brown-900 outline outline-1 outline-cream-200/15 shadow-[0_8px_24px_rgba(0,0,0,0.5)] p-5 max-w-sm w-full mx-4" onClick={(e) => e.stopPropagation()}>
-            <div className="text-cream-50 text-sm font-medium mb-1">Remove this candidate?</div>
-            <div className="text-cream-300 text-xs mb-4">Notes and communication log will be permanently deleted.</div>
-            <div className="flex justify-end gap-2">
-              <button onClick={() => setConfirmingDelete(false)} className="text-xs uppercase tracking-widest font-medium text-cream-200 hover:text-cream-50 bg-brown-800 px-3 py-2 cursor-pointer">Cancel</button>
-              <button onClick={performDelete} className="text-xs uppercase tracking-widest font-medium text-red-300 bg-red-500/20 hover:bg-red-500/30 px-3 py-2 cursor-pointer">Remove</button>
-            </div>
-          </div>
-        </div>
-      ) : null}
     </div>
   );
 }
@@ -310,7 +276,6 @@ function ModalBody({
   patch,
   syncAttend,
   attendSync,
-  deleteCandidate,
   onClose,
   onAppendComms,
   onDeleteComms,
@@ -324,7 +289,6 @@ function ModalBody({
   patch: (p: Record<string, unknown>, field: string) => Promise<void>;
   syncAttend: () => Promise<void>;
   attendSync: { syncing: boolean; error: string | null };
-  deleteCandidate: () => Promise<void>;
   onClose: () => void;
   onAppendComms: (entry: CommsEntry) => void;
   onDeleteComms: (id: string) => void;
@@ -349,7 +313,7 @@ function ModalBody({
             {c.isExternal ? <FlagPill label="External" /> : null}
           </div>
           <div className="text-xs text-cream-300 mt-1 flex items-center gap-3 flex-wrap">
-            {c.email ? <span>{c.email}</span> : null}
+            {c.email ? <CopyableEmail email={c.email} /> : null}
             {c.slackId ? (
               <a
                 href={`https://hackclub.enterprise.slack.com/team/${c.slackId}`}
@@ -405,7 +369,7 @@ function ModalBody({
                 options={[
                   { value: '', label: '— unassigned —', color: 'brown' },
                   ...admins.map((a) => ({
-                    value: a.id, label: a.name ?? a.email, color: ownerColor(a.id),
+                    value: a.id, label: a.name ?? a.email, color: ownerColor(a.id, admins),
                     hint: a.name ? a.email : undefined,
                   })),
                 ]}
@@ -502,14 +466,14 @@ function ModalBody({
         {/* Logistics — flight cost / stipend */}
         <Section title="Logistics">
           <div className="grid grid-cols-2 gap-3 items-end">
-            <Field label="Flight cost estimate ($)">
+            <Field label="Flight price ($)">
               <DollarInput
                 cents={c.flightCostEstimateCents}
                 onSave={(cents) => patch({ flightCostEstimateCents: cents }, 'flightCostEstimateCents')}
                 saving={savingField === 'flightCostEstimateCents'}
               />
             </Field>
-            <Field label="Flight stipend committed ($)">
+            <Field label="Flight stipend ($)">
               <DollarInput
                 cents={c.flightStipendCents}
                 onSave={(cents) => patch({ flightStipendCents: cents }, 'flightStipendCents')}
@@ -676,14 +640,45 @@ function ModalBody({
           ) : null}
         </div>
 
-        <div className="pt-2 flex justify-end">
+        <div className="pt-2 flex justify-end gap-2">
           <button
-            onClick={deleteCandidate}
-            className="text-xs uppercase tracking-widest font-medium text-red-300 bg-red-500/15 hover:bg-red-500/25 cursor-pointer px-3 py-2"
-          >Remove from dashboard</button>
+            onClick={() => patch({ outreachStatus: 'SHELVED' }, 'outreachStatus')}
+            disabled={c.outreachStatus === 'SHELVED' || savingField === 'outreachStatus'}
+            className="text-xs uppercase tracking-widest font-medium text-cream-100 bg-brown-800 hover:bg-orange-500/15 hover:text-orange-300 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer px-3 py-2 transition-[background-color,color] duration-150"
+          >Move to shelved</button>
+          <button
+            onClick={() => patch({ outreachStatus: 'DECLINED' }, 'outreachStatus')}
+            disabled={c.outreachStatus === 'DECLINED' || savingField === 'outreachStatus'}
+            className="text-xs uppercase tracking-widest font-medium text-cream-100 bg-brown-800 hover:bg-orange-500/15 hover:text-orange-300 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer px-3 py-2 transition-[background-color,color] duration-150"
+          >Move to declined</button>
         </div>
       </div>
     </>
+  );
+}
+
+/** Click-to-copy email pill. Shows a brief "Copied" state on success. */
+function CopyableEmail({ email }: Readonly<{ email: string }>) {
+  const [copied, setCopied] = useState(false);
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(email);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1200);
+    } catch { /* clipboard blocked — fall through silently */ }
+  }
+  return (
+    <button
+      type="button"
+      onClick={copy}
+      title={copied ? 'Copied!' : 'Click to copy'}
+      className={`group inline-flex items-center gap-1.5 cursor-pointer transition-[color] duration-150 ${copied ? 'text-green-400' : 'text-cream-300 hover:text-cream-50'}`}
+    >
+      <span>{email}</span>
+      <span aria-hidden className="text-xs opacity-0 group-hover:opacity-100 transition-opacity duration-150">
+        {copied ? '✓' : '⧉'}
+      </span>
+    </button>
   );
 }
 
@@ -851,7 +846,7 @@ function LogisticsSummary({ estimateCents, stipendCents, updatedAt, attendCity, 
           </span>
         </span>
       ) : null}
-      {updatedAt ? <span><span className="text-cream-300">Estimate:</span> {relativeTime(updatedAt)}</span> : null}
+      {updatedAt ? <span><span className="text-cream-300">Price updated:</span> {relativeTime(updatedAt)}</span> : null}
       {attendLoc ? <span><span className="text-cream-300">Attend says:</span> {attendLoc}</span> : null}
     </div>
   );
@@ -870,7 +865,7 @@ const AUDIT_FIELD_LABEL: Record<string, string> = {
   homeZip: 'Home ZIP',
   homeCountry: 'Home country',
   flightStipendCents: 'Flight stipend',
-  flightCostEstimateCents: 'Flight cost estimate',
+  flightCostEstimateCents: 'Flight price',
   notes: 'Notes',
   attendInvited: 'Invited in Attend',
   attendFlightBooked: 'Flight booked',

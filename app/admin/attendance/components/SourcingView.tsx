@@ -4,7 +4,8 @@ import { useMemo, useState } from 'react';
 import { Avatar } from './Avatar';
 import { SourceBadge } from './SourceBadge';
 import { AttendanceStatus } from '../lib/types';
-import { CandidateRow, earnedBits, relativeTime, locationLabel } from '../lib/types';
+import { CandidateRow, earnedBits, relativeTime, locationLabel, locationRegion, fullAddressLines } from '../lib/types';
+import { Tooltip } from './Tooltip';
 import { DerivedStatLine } from './DerivedStatLine';
 
 type SortKey = 'recent' | 'realBits' | 'projects' | 'hours' | 'reviews';
@@ -178,8 +179,8 @@ export function SourcingView({
                   </td>
                   <td className="px-4 py-3"><SourceBadge source={r.source} /></td>
                   <td className="px-4 py-3 text-cream-200 text-xs tabular-nums whitespace-nowrap"><DerivedStatLine row={r} /></td>
-                  <td className="px-4 py-3 text-xs text-cream-200 whitespace-nowrap">
-                    {locationLabel(r) ?? <span className="text-cream-400">—</span>}
+                  <td className="px-4 py-3 text-xs whitespace-nowrap">
+                    <LocationCell row={r} />
                   </td>
                   <td className="px-4 py-3 text-xs text-cream-300 tabular-nums whitespace-nowrap">{relativeTime(r.createdAt)}</td>
                   <td className="px-4 py-3 text-right whitespace-nowrap" data-stop>
@@ -229,6 +230,43 @@ export function SourcingView({
       ) : null}
     </div>
   );
+}
+
+/**
+ * Location cell with US/Canada (= cheap-to-fly) emphasis. Domestic candidates
+ * get bright text + a leading marker; international candidates dim. Hover the
+ * label for the full address tooltip when there's more detail to show.
+ */
+function LocationCell({ row }: Readonly<{ row: CandidateRow }>) {
+  const label = locationLabel(row);
+  if (!label) return <span className="text-cream-400">—</span>;
+  const region = locationRegion(row);
+  const isDomestic = region === 'us' || region === 'ca';
+  const lines = fullAddressLines(row);
+  const richer = lines.length > 1 || (lines[0] && lines[0] !== label);
+
+  const inner = (
+    <span className={`inline-flex items-center gap-1.5 ${isDomestic ? 'text-cream-50 font-medium' : 'text-cream-300'}`}>
+      <span
+        aria-hidden
+        className={`inline-block size-1.5 ${isDomestic ? 'bg-orange-500' : 'bg-cream-500/40'}`}
+        title={isDomestic ? (region === 'us' ? 'United States — domestic flight' : 'Canada — domestic flight') : 'International'}
+      />
+      {label}
+    </span>
+  );
+
+  return richer ? (
+    <Tooltip
+      content={
+        <div className="space-y-0.5">
+          {lines.map((l, i) => (
+            <div key={i} className={i === 0 ? 'text-cream-50' : 'text-cream-200'}>{l}</div>
+          ))}
+        </div>
+      }
+    >{inner}</Tooltip>
+  ) : inner;
 }
 
 function Checkbox({ checked, indeterminate, onChange }: Readonly<{ checked: boolean; indeterminate?: boolean; onChange: () => void }>) {

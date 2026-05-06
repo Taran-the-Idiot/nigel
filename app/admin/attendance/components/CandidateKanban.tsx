@@ -2,7 +2,7 @@
 
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { Avatar } from './Avatar';
-import { SOURCE_LABEL, SOURCE_FULL_LABEL, CandidateRow, KanbanColumn, AttendanceStatus, AttendanceCandidateSource, AdminUser, KANBAN_ORDER, KANBAN_LABEL, kanbanColumnFor, kanbanColumnTone, kanbanColumnAccent, relativeTime, touchHealth, locationLabel, ownerColor, ownerNameTextClass } from '../lib/types';
+import { SOURCE_LABEL, SOURCE_FULL_LABEL, CandidateRow, KanbanColumn, AttendanceStatus, AttendanceCandidateSource, AdminUser, KANBAN_ORDER, KANBAN_LABEL, kanbanColumnFor, kanbanColumnTone, kanbanColumnAccent, relativeTime, touchHealth, locationLabel, fullAddressLines, ownerColor, ownerNameTextClass } from '../lib/types';
 import { ContextMenu, MenuItem } from './ContextMenu';
 import { InviteAttendDialog } from './InviteAttendDialog';
 import { LinkStasisUserDialog } from './LinkStasisUserDialog';
@@ -195,7 +195,7 @@ export function CandidateKanban({
       { label: '— Unassigned —', disabled: row.ownerId === null, onSelect: () => setOwner(row.id, null) },
       ...admins.map((a) => ({
         label: a.name ?? a.email,
-        swatchColor: ownerColor(a.id),
+        swatchColor: ownerColor(a.id, admins),
         disabled: a.id === row.ownerId,
         onSelect: () => setOwner(row.id, a.id),
       })),
@@ -223,7 +223,7 @@ export function CandidateKanban({
       { label: '— Unassigned —', disabled: row.ownerId === null, onSelect: () => setOwner(row.id, null) },
       ...admins.map((a) => ({
         label: a.name ?? a.email,
-        swatchColor: ownerColor(a.id),
+        swatchColor: ownerColor(a.id, admins),
         disabled: a.id === row.ownerId,
         onSelect: () => setOwner(row.id, a.id),
       })),
@@ -235,7 +235,6 @@ export function CandidateKanban({
       { type: 'separator' },
       {
         label: row.attendInvited ? 'Send Attend invite (already invited)' : 'Send Attend invite…',
-        hint: '↗',
         disabled: !(row.email),
         onSelect: () => setInviteTarget({
           candidateId: row.id,
@@ -245,8 +244,9 @@ export function CandidateKanban({
           alreadyInvited: row.attendInvited,
         }),
       },
+      { type: 'separator' },
       ...(row.userId ? [{
-        label: 'Open user record',
+        label: 'Open Airtable record',
         hint: '↗',
         onSelect: () => window.open(`/admin/users?search=${encodeURIComponent(row.email ?? '')}`, '_blank'),
       } as MenuItem] : [{
@@ -258,6 +258,17 @@ export function CandidateKanban({
           candidateImage: row.image,
         }),
       } as MenuItem]),
+      {
+        label: 'Open Slack profile',
+        hint: '↗',
+        disabled: !row.slackId,
+        onSelect: () => row.slackId && window.open(`https://hackclub.enterprise.slack.com/team/${row.slackId}`, '_blank'),
+      },
+      {
+        label: 'Copy email',
+        disabled: !row.email,
+        onSelect: () => row.email && navigator.clipboard?.writeText(row.email).catch(() => {}),
+      },
       { type: 'separator' },
       { label: 'Open profile', onSelect: () => onOpen(row.id) },
     ];
@@ -307,6 +318,7 @@ export function CandidateKanban({
                     key={r.id}
                     row={r}
                     index={i}
+                    admins={admins}
                     onOpen={onOpen}
                     onReload={onReload}
                     isDragging={draggingId === r.id}
@@ -556,6 +568,7 @@ function TravelLegRow({ direction, leg }: Readonly<{ direction: string; leg: Tra
 function KanbanCard({
   row,
   index,
+  admins,
   onOpen,
   onReload,
   isDragging,
@@ -567,6 +580,7 @@ function KanbanCard({
 }: Readonly<{
   row: CandidateRow;
   index: number;
+  admins: AdminUser[];
   onOpen: (id: string) => void;
   onReload: () => void;
   isDragging: boolean;
@@ -583,14 +597,46 @@ function KanbanCard({
     ? `Reviewer · ${row.derivedStats.reviewerWeekCount}/30`
     : SOURCE_LABEL[row.source];
   const loc = locationLabel(row);
+  // `dragstart` fires on the draggable element itself, so its target is
+  // always the parent card — we can't tell which descendant the gesture
+  // actually started on by looking at the dragstart event alone. Capture
+  // the mousedown target and (a) flip `draggable` to false synchronously
+  // so the browser doesn't initiate a drag at all when the gesture starts
+  // inside a `data-no-drag` zone, and (b) hard-cancel any drag that does
+  // slip through via preventDefault.
+  const cardRef = useRef<HTMLDivElement>(null);
+  const dragStartTargetRef = useRef<EventTarget | null>(null);
+  // Tracked manually instead of using CSS `:active` so a press inside a
+  // `data-no-drag` zone (e.g. the inline notes textarea) doesn't shrink the
+  // whole card while the user is just trying to position the cursor.
+  const [pressed, setPressed] = useState(false);
 
   return (
     <div
+      ref={cardRef}
       role="button"
       tabIndex={0}
       draggable
-      onDragStart={onDragStart}
-      onDragEnd={onDragEnd}
+      onMouseDown={(e) => {
+        dragStartTargetRef.current = e.target;
+        const inNoDrag = (e.target as HTMLElement).closest('[data-no-drag]');
+        cardRef.current?.setAttribute('draggable', inNoDrag ? 'false' : 'true');
+        if (!inNoDrag) setPressed(true);
+      }}
+      onMouseUp={() => {
+        cardRef.current?.setAttribute('draggable', 'true');
+        setPressed(false);
+      }}
+      onMouseLeave={() => setPressed(false)}
+      onDragStart={(e) => {
+        const origin = dragStartTargetRef.current as HTMLElement | null;
+        if (origin && origin.closest('[data-no-drag]')) {
+          e.preventDefault();
+          return;
+        }
+        onDragStart(e);
+      }}
+      onDragEnd={(e) => { setPressed(false); onDragEnd(e); }}
       onClick={(e) => {
         // Don't open modal when clicking the editable status field
         if ((e.target as HTMLElement).closest('[data-status-edit]')) return;
@@ -605,7 +651,7 @@ function KanbanCard({
       }}
       onContextMenu={onContextMenu}
       style={{ ['--row-i' as keyof React.CSSProperties as string]: Math.min(index, 12) } as React.CSSProperties}
-      className={`attendance-card group relative w-full text-left bg-brown-800 border-2 border-cream-200/10 hover:border-orange-500/60 hover:bg-orange-500/10 hover:-translate-y-px transition-[transform,border-color,background-color,color,opacity] duration-150 ease-[cubic-bezier(0.22,1,0.36,1)] active:translate-y-0 active:scale-[0.99] cursor-pointer ${isDragging ? 'opacity-40 border-orange-500/60' : ''}`}
+      className={`attendance-card group relative w-full text-left bg-brown-800 border-2 border-cream-200/10 hover:border-orange-500/60 hover:bg-orange-500/10 hover:-translate-y-px transition-[transform,border-color,background-color,color,opacity] duration-150 ease-[cubic-bezier(0.22,1,0.36,1)] cursor-pointer ${pressed ? 'translate-y-0 scale-[0.99]' : ''} ${isDragging ? 'opacity-40 border-orange-500/60' : ''}`}
     >
       {/* Identity zone */}
       <div className="flex items-start gap-2.5 min-w-0 px-3 pt-3">
@@ -645,7 +691,7 @@ function KanbanCard({
                   data-inline-edit
                   onMouseDown={(e) => e.stopPropagation()}
                   onClick={(e) => { e.stopPropagation(); onEditOwner(e); }}
-                  className={`font-medium hover:text-orange-300 cursor-pointer ${ownerNameTextClass(row.ownerId)}`}
+                  className={`font-medium hover:text-orange-300 cursor-pointer ${ownerNameTextClass(row.ownerId, admins)}`}
                 >
                   {ownerFirst}
                 </button>
@@ -662,9 +708,22 @@ function KanbanCard({
               </button>
             )}
           </div>
-          {loc ? (
-            <div className="text-xs text-cream-400 truncate mt-0.5">{loc}</div>
-          ) : null}
+          {loc ? (() => {
+            const lines = fullAddressLines(row);
+            const richer = lines.length > 1 || (lines[0] && lines[0] !== loc);
+            const node = <span className="text-xs text-cream-400 truncate mt-0.5 block">{loc}</span>;
+            return richer ? (
+              <Tooltip
+                content={
+                  <div className="space-y-0.5">
+                    {lines.map((l, i) => (
+                      <div key={i} className={i === 0 ? 'text-cream-50' : 'text-cream-200'}>{l}</div>
+                    ))}
+                  </div>
+                }
+              >{node}</Tooltip>
+            ) : node;
+          })() : null}
         </div>
       </div>
 
@@ -747,54 +806,65 @@ function NotesField({
   }
 
   if (!editing) {
+    // `data-no-drag` is read by the parent KanbanCard's onDragStart and
+    // cancels the card drag for gestures that originate inside the notes.
+    // Click → edit, but only if no text was selected by the gesture (so a
+    // real selection drag doesn't immediately collapse into edit mode).
     return (
-      <button
-        type="button"
+      <div
         data-status-edit
-        onClick={(e) => { e.stopPropagation(); setEditing(true); }}
-        onMouseDown={(e) => e.stopPropagation()}
-        className={`w-full text-left text-sm leading-snug min-h-[1.75rem] px-2 py-1 -mx-2 cursor-text transition-[background-color,border-color] duration-100 border-2 border-transparent hover:border-cream-200/20 hover:bg-brown-900 ${
+        data-no-drag
+        onClick={(e) => {
+          e.stopPropagation();
+          const sel = window.getSelection();
+          if (sel && sel.toString().length > 0) return; // user is selecting, leave alone
+          setEditing(true);
+        }}
+        title="Click to edit"
+        className={`w-full text-left text-sm leading-snug min-h-[1.75rem] px-2 py-1 -mx-2 cursor-text whitespace-pre-wrap break-words select-text transition-[background-color,border-color] duration-100 border-2 border-transparent hover:border-cream-200/20 hover:bg-brown-900 ${
           value ? 'text-cream-100' : 'text-cream-400 italic'
         }`}
-        title="Click to edit"
       >
         {value || 'Add notes…'}
-      </button>
+      </div>
     );
   }
 
   return (
-    <textarea
-      ref={inputRef}
-      data-status-edit
-      value={draft}
-      onChange={(e) => {
-        setDraft(e.target.value);
-        const el = inputRef.current;
-        if (el) {
-          el.style.height = 'auto';
-          el.style.height = el.scrollHeight + 'px';
-        }
-      }}
+    <div
+      data-no-drag
       onClick={(e) => e.stopPropagation()}
-      onMouseDown={(e) => e.stopPropagation()}
-      onKeyDown={(e) => {
-        e.stopPropagation();
-        if (e.key === 'Escape') {
-          setDraft(value ?? '');
-          setEditing(false);
-        }
-        if (e.key === 'Enter' && !e.shiftKey) {
-          e.preventDefault();
-          save();
-        }
-      }}
-      onBlur={() => save()}
-      disabled={saving}
-      placeholder="Add notes…"
-      rows={1}
-      className="w-full bg-brown-900 text-cream-50 text-sm px-2 py-1.5 outline-none focus:ring-2 focus:ring-orange-500/60 focus:ring-inset resize-none leading-snug placeholder:text-cream-400 placeholder:italic"
-    />
+    >
+      <textarea
+        ref={inputRef}
+        data-status-edit
+        value={draft}
+        onChange={(e) => {
+          setDraft(e.target.value);
+          const el = inputRef.current;
+          if (el) {
+            el.style.height = 'auto';
+            el.style.height = el.scrollHeight + 'px';
+          }
+        }}
+        onKeyDown={(e) => {
+          e.stopPropagation();
+          if (e.key === 'Escape') {
+            setDraft(value ?? '');
+            setEditing(false);
+          }
+          if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault();
+            save();
+          }
+        }}
+        onBlur={() => save()}
+        disabled={saving}
+        placeholder="Add notes…"
+        rows={1}
+        className="w-full bg-brown-900 text-cream-50 text-sm px-2 py-1.5 outline-none focus:ring-2 focus:ring-orange-500/60 focus:ring-inset resize-none leading-snug placeholder:text-cream-400 placeholder:italic"
+      />
+    </div>
   );
 }
 

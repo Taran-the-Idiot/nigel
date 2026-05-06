@@ -469,7 +469,7 @@ export default function AttendancePage() {
             ...admins.map((a) => ({
               value: a.id,
               label: `Owner: ${a.name?.split(' ')[0] ?? a.email}`,
-              color: ownerColor(a.id),
+              color: ownerColor(a.id, admins),
             })),
           ]}
         />

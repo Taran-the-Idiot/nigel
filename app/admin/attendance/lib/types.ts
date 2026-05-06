@@ -268,19 +268,33 @@ export function formatDollars(cents: number | null | undefined): string {
   return `$${(cents / 100).toLocaleString(undefined, { maximumFractionDigits: 0 })}`
 }
 
-/** Stable, deterministic color picked for an owner by id. Used everywhere
+/** Stable, deterministic color picked for an owner. Used everywhere
  * (filter dropdown, kanban card name, modal select, right-click submenu) so a
- * given admin always shows up in the same color. */
+ * given admin always shows up in the same color.
+ *
+ * Strategy: sort all admin ids and assign palette colors round-robin by index.
+ * This guarantees zero collisions until the admin count exceeds the palette
+ * size — much better than the hash-mod approach, which collides as soon as
+ * two ids land in the same bucket regardless of admin count. */
 const OWNER_PALETTE = ['emerald', 'blue', 'purple', 'pink', 'orange', 'yellow', 'cream'] as const
 export type OwnerColor = typeof OWNER_PALETTE[number]
-export function ownerColor(id: string): OwnerColor {
-  let h = 0
-  for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) >>> 0
-  return OWNER_PALETTE[h % OWNER_PALETTE.length]
+
+export function ownerColor(id: string, admins: ReadonlyArray<{ id: string }>): OwnerColor {
+  const sorted = [...admins].map((a) => a.id).sort()
+  const idx = sorted.indexOf(id)
+  if (idx < 0) {
+    // Unknown admin (e.g. a stale ownerId after the admin was removed). Fall
+    // back to a stable hash so the color stays consistent within the session.
+    let h = 0
+    for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) >>> 0
+    return OWNER_PALETTE[h % OWNER_PALETTE.length]
+  }
+  return OWNER_PALETTE[idx % OWNER_PALETTE.length]
 }
+
 /** CSS class for an owner-colored name (matches the swatch in dropdowns). */
-export function ownerNameTextClass(id: string): string {
-  switch (ownerColor(id)) {
+export function ownerNameTextClass(id: string, admins: ReadonlyArray<{ id: string }>): string {
+  switch (ownerColor(id, admins)) {
     case 'emerald': return 'text-emerald-300'
     case 'blue':    return 'text-sky-300'
     case 'purple':  return 'text-violet-300'
@@ -299,11 +313,12 @@ export function ownerNameTextClass(id: string): string {
  *   4. Manually-entered homeAirport (IATA fallback)
  * Returns null when nothing's known.
  *
- * Region rule: 2-letter state when in the US, country otherwise.
+ * Region rule: 2-letter state when in the US, 2-letter province when in
+ * Canada, country otherwise.
  */
 type LocationRow = Pick<
   CandidateRow,
-  | "homeCity" | "homeState" | "homeCountry"
+  | "homeStreet" | "homeCity" | "homeState" | "homeZip" | "homeCountry"
   | "attendCity" | "attendState" | "attendCountry"
   | "homeAirport" | "userAddress"
 >
@@ -315,6 +330,34 @@ export function locationLabel(row: LocationRow): string | null {
   }
   if (row.homeAirport) return row.homeAirport
   return null
+}
+
+/** "domestic" = US or Canada — used to decide whether to show region (state/
+ * province) vs just country, and to highlight cheap-to-fly candidates. */
+export type LocationRegion = "us" | "ca" | "other" | "unknown"
+export function locationRegion(row: LocationRow): LocationRegion {
+  const country = row.homeCountry ?? row.userAddress?.country ?? row.attendCountry ?? null
+  if (!country) return "unknown"
+  if (isUS(country)) return "us"
+  if (isCanada(country)) return "ca"
+  return "other"
+}
+
+/** Full multi-line address (street + city + region + zip + country) used for
+ * tooltips on the short location label. Returns the lines that exist; empty
+ * array if nothing's known. */
+export function fullAddressLines(row: LocationRow): string[] {
+  const lines: string[] = []
+  const street = row.homeStreet ?? row.userAddress?.street ?? null
+  const city = row.homeCity ?? row.userAddress?.city ?? row.attendCity ?? null
+  const state = row.homeState ?? row.userAddress?.state ?? row.attendState ?? null
+  const zip = row.homeZip ?? row.userAddress?.zip ?? null
+  const country = row.homeCountry ?? row.userAddress?.country ?? row.attendCountry ?? null
+  if (street) lines.push(street)
+  const cityLine = [city, state, zip].filter(Boolean).join(", ").replace(/, (\S+)$/, " $1")
+  if (cityLine) lines.push(cityLine)
+  if (country) lines.push(country)
+  return lines
 }
 
 /** Pick city/state/country from the highest-priority source available. Each
@@ -343,10 +386,23 @@ const US_STATE_TO_CODE: Record<string, string> = {
   wyoming: "WY", "puerto rico": "PR",
 }
 
+const CA_PROVINCE_TO_CODE: Record<string, string> = {
+  alberta: "AB", "british columbia": "BC", manitoba: "MB", "new brunswick": "NB",
+  "newfoundland and labrador": "NL", "newfoundland": "NL", "nova scotia": "NS",
+  "northwest territories": "NT", nunavut: "NU", ontario: "ON", "prince edward island": "PE",
+  quebec: "QC", "québec": "QC", saskatchewan: "SK", yukon: "YT",
+}
+
 function isUS(country: string | null | undefined): boolean {
   if (!country) return false
   const c = country.trim().toLowerCase()
   return c === "united states" || c === "united states of america" || c === "usa" || c === "us" || c === "u.s." || c === "u.s.a."
+}
+
+function isCanada(country: string | null | undefined): boolean {
+  if (!country) return false
+  const c = country.trim().toLowerCase()
+  return c === "canada" || c === "ca" || c === "can"
 }
 
 function normalizeUSState(state: string): string {
@@ -355,8 +411,15 @@ function normalizeUSState(state: string): string {
   return US_STATE_TO_CODE[trimmed.toLowerCase()] ?? trimmed
 }
 
+function normalizeCAProvince(state: string): string {
+  const trimmed = state.trim()
+  if (trimmed.length === 2) return trimmed.toUpperCase()
+  return CA_PROVINCE_TO_CODE[trimmed.toLowerCase()] ?? trimmed
+}
+
 function formatRegion(country: string | null | undefined, state: string | null | undefined): string | null {
   if (isUS(country)) return state ? normalizeUSState(state) : null
+  if (isCanada(country)) return state ? normalizeCAProvince(state) : "Canada"
   return country?.trim() || null
 }
 
