@@ -1262,6 +1262,7 @@ export default function AdminProjectPage({ params }: { params: Promise<{ id: str
                       <tr key={item.id} className="border-b border-cream-500/20 last:border-b-0">
                         <td className="text-cream-50 px-4 py-3">{item.name}</td>
                         <td className="text-cream-50 px-4 py-3">{item.purpose}</td>
+                        <td className="text-cream-50 text-right px-4 py-3">${formatPrice(item.quantity && item.quantity > 0 ? item.totalCost / item.quantity : item.totalCost)}</td>
                         <td className="text-cream-50 text-right px-4 py-3">{item.quantity ?? '-'}</td>
                         <td className="text-cream-50 text-right px-4 py-3">${formatPrice(item.totalCost)}</td>
                         <td className="px-4 py-3">
