@@ -413,6 +413,25 @@ export default function AttendancePage() {
   const showSourceFilter = true;
   const showAttendFilter = view !== 'sourcing';
 
+  // Build the URL the segmented control would settle to if you switched into
+  // `target`. Renders as the anchor href so middle-click / cmd-click open the
+  // target view in a new tab. Mirrors the URL effect's serialization, picking
+  // the filter bag that matches `target` (not the current view) so the new tab
+  // matches what a normal click would produce.
+  const buildViewHref = useCallback((target: ViewMode): string => {
+    const f = target === 'sourcing' ? sourcingFilters : mainFilters;
+    const sp = new URLSearchParams();
+    if (f.q) sp.set('q', f.q);
+    if (f.status) sp.set('status', f.status);
+    if (f.ownerId) sp.set('owner', f.ownerId);
+    if (f.source) sp.set('source', f.source);
+    if (f.girls) sp.set('girls', f.girls);
+    if (f.attend) sp.set('attend', f.attend);
+    if (target !== 'kanban') sp.set('view', target);
+    const qs = sp.toString();
+    return qs ? `${pathname}?${qs}` : pathname;
+  }, [mainFilters, sourcingFilters, pathname]);
+
   if (rolesLoading || !allowed) {
     return (
       <div className="min-h-[40vh] flex items-center justify-center">
@@ -437,6 +456,7 @@ export default function AttendancePage() {
           <SegmentedView
             value={view}
             onChange={setView}
+            getHref={buildViewHref}
             options={[
               { value: 'kanban', label: 'Kanban' },
               { value: 'table', label: 'Table' },
@@ -717,20 +737,34 @@ function SlackSyncButton({
   );
 }
 
-/** Single segmented control — no fake-divider artifacts. */
+/**
+ * Single segmented control — no fake-divider artifacts. Each option is an
+ * anchor so middle-click / cmd-click opens that view in a new tab; left-click
+ * is intercepted and routed through `onChange` to keep SPA state.
+ */
 function SegmentedView<T extends string>({
-  value, onChange, options,
-}: Readonly<{ value: T; onChange: (v: T) => void; options: Array<{ value: T; label: string }> }>) {
+  value, onChange, options, getHref,
+}: Readonly<{
+  value: T;
+  onChange: (v: T) => void;
+  options: Array<{ value: T; label: string }>;
+  getHref: (v: T) => string;
+}>) {
   return (
     <div className="inline-flex items-stretch bg-brown-800 outline outline-1 -outline-offset-1 outline-cream-200/10">
       {options.map((opt, i) => {
         const active = opt.value === value;
         return (
-          <button
+          <a
             key={opt.value}
-            onClick={() => onChange(opt.value)}
-            className={`text-xs uppercase tracking-widest font-medium px-4 py-2 cursor-pointer transition-[background-color,color] duration-150 active:scale-[0.97] ${i > 0 ? 'border-l border-cream-200/10' : ''} ${active ? 'bg-orange-500/20 text-orange-400' : 'text-cream-200 hover:text-cream-50 hover:bg-brown-700/40'}`}
-          >{opt.label}</button>
+            href={getHref(opt.value)}
+            onClick={(e) => {
+              if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+              e.preventDefault();
+              onChange(opt.value);
+            }}
+            className={`text-xs uppercase tracking-widest font-medium px-4 py-2 cursor-pointer transition-[background-color,color] duration-150 active:scale-[0.97] no-underline ${i > 0 ? 'border-l border-cream-200/10' : ''} ${active ? 'bg-orange-500/20 text-orange-400' : 'text-cream-200 hover:text-cream-50 hover:bg-brown-700/40'}`}
+          >{opt.label}</a>
         );
       })}
     </div>
