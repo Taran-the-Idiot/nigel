@@ -49,6 +49,12 @@ function readViewFromUrl(sp: URLSearchParams): ViewMode {
   return 'kanban';
 }
 
+function readSourcingSelectionFromUrl(sp: URLSearchParams): Set<string> {
+  const raw = sp.get('sel');
+  if (!raw) return new Set();
+  return new Set(raw.split(',').filter(Boolean));
+}
+
 export default function AttendancePage() {
   const searchParams = useSearchParams();
   const pathname = usePathname();
@@ -74,6 +80,7 @@ export default function AttendancePage() {
   const [view, setView] = useState<ViewMode>(() => readViewFromUrl(new URLSearchParams(searchParams.toString())));
   const [filters, setFilters] = useState<FilterState>(() => readFiltersFromUrl(new URLSearchParams(searchParams.toString())));
   const [selectedId, setSelectedId] = useState<string | null>(searchParams.get('id'));
+  const [sourcingSelected, setSourcingSelected] = useState<Set<string>>(() => readSourcingSelectionFromUrl(new URLSearchParams(searchParams.toString())));
   const [adding, setAdding] = useState(false);
   const [highlightedId, setHighlightedId] = useState<string | null>(null);
   const [hideChrome, setHideChrome] = useState(false);
@@ -124,12 +131,15 @@ export default function AttendancePage() {
       if (filters.attend) sp.set('attend', filters.attend);
       if (view !== 'kanban') sp.set('view', view);
       if (selectedId) sp.set('id', selectedId);
+      if (view === 'sourcing' && sourcingSelected.size > 0) {
+        sp.set('sel', [...sourcingSelected].join(','));
+      }
       const qs = sp.toString();
       const next = qs ? `${pathname}?${qs}` : pathname;
       router.replace(next, { scroll: false });
     }, 250);
     return () => clearTimeout(t);
-  }, [filters, view, selectedId, pathname, router]);
+  }, [filters, view, selectedId, sourcingSelected, pathname, router]);
 
   const load = useCallback(async () => {
     try {
@@ -561,7 +571,7 @@ export default function AttendancePage() {
         ) : view === 'kanban' ? (
           <CandidateKanban rows={filtered} onOpen={setSelectedId} onMove={moveCandidate} admins={admins} onReload={load} />
         ) : view === 'sourcing' ? (
-          <SourcingView rows={filtered} onOpen={setSelectedId} onReload={load} />
+          <SourcingView rows={filtered} onOpen={setSelectedId} onReload={load} selected={sourcingSelected} setSelected={setSourcingSelected} />
         ) : (
           <CandidateTable rows={filtered} onOpen={setSelectedId} highlightedId={highlightedId} onHighlight={setHighlightedId} />
         )}

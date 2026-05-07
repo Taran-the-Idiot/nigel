@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { Dispatch, SetStateAction, useMemo, useState } from 'react';
 import { Avatar } from './Avatar';
 import { SourceBadge } from './SourceBadge';
 import { AttendanceStatus } from '../lib/types';
@@ -20,12 +20,15 @@ export function SourcingView({
   rows,
   onOpen,
   onReload,
+  selected,
+  setSelected,
 }: Readonly<{
   rows: CandidateRow[];
   onOpen: (id: string) => void;
   onReload: () => void;
+  selected: Set<string>;
+  setSelected: Dispatch<SetStateAction<Set<string>>>;
 }>) {
-  const [selected, setSelected] = useState<Set<string>>(new Set());
   const [sortKey, setSortKey] = useState<SortKey>('recent');
   const [working, setWorking] = useState(false);
 
