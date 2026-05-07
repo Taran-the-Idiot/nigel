@@ -123,7 +123,33 @@ export async function GET() {
     }
   })
 
-  return NextResponse.json({ items })
+  const stipendSummary = (() => {
+    if (!stipendLookup) return null
+    const candidateEmails = new Set<string>()
+    const candidateSlackIds = new Set<string>()
+    for (const c of candidates) {
+      const email = (c.user?.email ?? c.externalEmail)?.trim().toLowerCase()
+      const slackId = (c.user?.slackId ?? c.externalSlackId)?.trim()
+      if (email) candidateEmails.add(email)
+      if (slackId) candidateSlackIds.add(slackId)
+    }
+    let totalApprovedCents = 0
+    let unmatchedCount = 0
+    for (const s of stipendLookup.all) {
+      if (s.approvedAmountCents == null) continue
+      totalApprovedCents += s.approvedAmountCents
+      const emailMatch = s.email ? candidateEmails.has(s.email) : false
+      const slackMatch = s.slackId ? candidateSlackIds.has(s.slackId) : false
+      if (!emailMatch && !slackMatch) unmatchedCount += 1
+    }
+    return {
+      totalApprovedCents,
+      unmatchedCount,
+      airtableUrl: airtableStipendUrl(),
+    }
+  })()
+
+  return NextResponse.json({ items, stipendSummary })
 }
 
 /**

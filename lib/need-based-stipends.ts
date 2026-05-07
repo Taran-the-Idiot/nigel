@@ -21,6 +21,7 @@ export interface NeedBasedStipend {
 export interface StipendLookup {
   byEmail: Map<string, NeedBasedStipend>;
   bySlackId: Map<string, NeedBasedStipend>;
+  all: NeedBasedStipend[];
 }
 
 let cached: { value: StipendLookup; expiresAt: number } | null = null;
@@ -41,6 +42,7 @@ export async function getNeedBasedStipendLookup(): Promise<StipendLookup | null>
 
   const byEmail = new Map<string, NeedBasedStipend>();
   const bySlackId = new Map<string, NeedBasedStipend>();
+  const all: NeedBasedStipend[] = [];
   for (const r of records) {
     const email = normalize(r.get('Email'))?.toLowerCase() ?? null;
     const slackId = normalize(r.get('Slack ID')) ?? null;
@@ -49,10 +51,11 @@ export async function getNeedBasedStipendLookup(): Promise<StipendLookup | null>
       typeof approvedRaw === 'number' && isFinite(approvedRaw) ? Math.round(approvedRaw * 100) : null;
     const status = normalize(r.get('Stasus')) ?? null;
     const entry: NeedBasedStipend = { recordId: r.id, email, slackId, approvedAmountCents, status };
+    all.push(entry);
     if (email) byEmail.set(email, entry);
     if (slackId) bySlackId.set(slackId, entry);
   }
-  const value: StipendLookup = { byEmail, bySlackId };
+  const value: StipendLookup = { byEmail, bySlackId, all };
   cached = { value, expiresAt: Date.now() + TTL_MS };
   return value;
 }

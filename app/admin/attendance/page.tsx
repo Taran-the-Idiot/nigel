@@ -63,6 +63,11 @@ export default function AttendancePage() {
   }, [rolesLoading, allowed, hasRole, router]);
 
   const [rows, setRows] = useState<CandidateRow[]>([]);
+  const [stipendSummary, setStipendSummary] = useState<{
+    totalApprovedCents: number;
+    unmatchedCount: number;
+    airtableUrl: string;
+  } | null>(null);
   const [admins, setAdmins] = useState<AdminUser[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -137,6 +142,7 @@ export default function AttendancePage() {
       const rowsJ = await rowsRes.json();
       const adminsJ = await adminsRes.json();
       setRows(rowsJ.items ?? []);
+      setStipendSummary(rowsJ.stipendSummary ?? null);
       setAdmins(adminsJ.items ?? []);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed');
@@ -300,10 +306,7 @@ export default function AttendancePage() {
     // Sums for the % anchor — base on confirmed + booked (the people we'll actually have)
     const confirmed = (byCol.get('CONFIRMED_YES')?.total ?? 0) + (byCol.get('BOOKED_FLIGHT')?.total ?? 0);
     const confirmedGirls = (byCol.get('CONFIRMED_YES')?.girls ?? 0) + (byCol.get('BOOKED_FLIGHT')?.girls ?? 0);
-    const stipendCommitted = rows
-      .filter((r) => (r.outreachStatus === 'CONFIRMED_YES' || r.outreachStatus === 'CONTACTED' || r.outreachStatus === 'SOFT_YES') && r.flightStipendCents)
-      .reduce((s, r) => s + (r.flightStipendCents ?? 0), 0);
-    return { sourced, girlsSourced, byCol, inactive, confirmed, confirmedGirls, stipendCommitted };
+    return { sourced, girlsSourced, byCol, inactive, confirmed, confirmedGirls };
   }, [rows]);
 
   // Keyboard shortcuts
@@ -462,7 +465,7 @@ export default function AttendancePage() {
               confirmedGirls={funnelCounts.confirmedGirls}
               girlTarget={40}
             />
-            <StipendChip cents={funnelCounts.stipendCommitted} />
+            <StipendChip summary={stipendSummary} />
           </div>
         </div>
       ) : null}
@@ -758,14 +761,42 @@ function GirlTargetChip({ confirmedGirls, girlTarget }: Readonly<{ confirmedGirl
   );
 }
 
-/** Hero readout for committed stipend total — compact two-line layout. */
-function StipendChip({ cents }: Readonly<{ cents: number }>) {
-  const dollars = Math.round(cents / 100);
+/**
+ * Hero readout for the total approved stipend in Airtable. The whole card is a
+ * link to the Need Based Stipends view; a small "!" indicator appears when one
+ * or more approved stipends in Airtable can't be matched to a candidate row by
+ * email or slack id (so the team knows there's drift to reconcile).
+ */
+function StipendChip({ summary }: Readonly<{
+  summary: { totalApprovedCents: number; unmatchedCount: number; airtableUrl: string } | null;
+}>) {
+  const dollars = summary ? Math.round(summary.totalApprovedCents / 100) : null;
+  const unmatched = summary?.unmatchedCount ?? 0;
+  const href = summary?.airtableUrl ?? 'https://airtable.com/appRMw1ya4lnaYsGv/tblrekVLXlHMNWH53/viwBFr8SRusYLWCxW';
+  const title = unmatched > 0
+    ? `${unmatched} approved stipend${unmatched === 1 ? '' : 's'} in Airtable not matched to a candidate by email/slack — open Airtable to reconcile`
+    : 'Open the Need Based Stipends view in Airtable';
   return (
-    <div className="bg-brown-800 px-3 py-2 flex flex-col justify-between min-w-[150px]">
-      <div className="text-xs uppercase tracking-widest text-cream-300 font-medium">Total stipend</div>
-      <div className="text-base font-semibold tabular-nums leading-none text-orange-400 mt-1.5">${dollars.toLocaleString()}</div>
-    </div>
+    <a
+      href={href}
+      target="_blank"
+      rel="noopener noreferrer"
+      title={title}
+      className="bg-brown-800 px-3 py-2 flex flex-col justify-between min-w-[150px] hover:bg-brown-700 transition-[background-color] duration-150 cursor-pointer"
+    >
+      <div className="flex items-center gap-1.5">
+        <span className="text-xs uppercase tracking-widest text-cream-300 font-medium">Total stipend</span>
+        {unmatched > 0 ? (
+          <span
+            aria-label={`${unmatched} unmatched`}
+            className="inline-flex items-center justify-center min-w-[1rem] h-4 px-1 bg-red-500/20 text-red-300 text-[10px] font-bold tabular-nums leading-none"
+          >!{unmatched > 1 ? <span className="ml-0.5">{unmatched}</span> : null}</span>
+        ) : null}
+      </div>
+      <div className="text-base font-semibold tabular-nums leading-none text-orange-400 mt-1.5">
+        {dollars == null ? '—' : `$${dollars.toLocaleString()}`}
+      </div>
+    </a>
   );
 }
 
