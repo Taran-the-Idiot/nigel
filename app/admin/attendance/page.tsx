@@ -125,6 +125,31 @@ export default function AttendancePage() {
     const stored = localStorage.getItem('attendance:hideChrome') === '1';
     setHideChrome(stored);
   }, []);
+
+  // Hydrate last-sync state for slack & loops from localStorage. Attend already
+  // has a server-side "last sync" via attendCachedAt on each row; the other two
+  // have nothing canonical to read, so we persist the most recent in-browser
+  // run to give users a usable "I last synced ago" hint across reloads.
+  useEffect(() => {
+    try {
+      const slack = localStorage.getItem('attendance:lastSync:slack');
+      if (slack) {
+        const parsed = JSON.parse(slack);
+        if (parsed?.lastRunAt) {
+          setSlackSync((s) => ({ ...s, lastRunAt: parsed.lastRunAt, lastResult: parsed.lastResult ?? null }));
+        }
+      }
+      const loops = localStorage.getItem('attendance:lastSync:loops');
+      if (loops) {
+        const parsed = JSON.parse(loops);
+        if (parsed?.lastRunAt) {
+          setLoopsSync((s) => ({ ...s, lastRunAt: parsed.lastRunAt, lastResult: parsed.lastResult ?? null }));
+        }
+      }
+    } catch {
+      // Bad JSON or storage error — ignore, the UI just falls back to "—".
+    }
+  }, []);
   useEffect(() => {
     const html = document.documentElement;
     if (hideChrome) html.classList.add('hide-admin-chrome');
@@ -220,20 +245,18 @@ export default function AttendancePage() {
       if (!res.ok) {
         throw new Error(body?.error ?? `Loops sync failed (${res.status})`);
       }
-      setLoopsSync({
-        state: 'idle',
-        error: null,
-        lastResult: {
-          scanned: body.scanned ?? 0,
-          created: body.created ?? 0,
-          updated: body.updated ?? 0,
-          unchanged: body.unchanged ?? 0,
-          girlsReachedOut: body.girlsReachedOut ?? 0,
-          errors: Array.isArray(body.errors) ? body.errors.length : 0,
-          skippedNoWriteAccess: !!body.skippedNoWriteAccess,
-        },
-        lastRunAt: body.syncedAt ?? new Date().toISOString(),
-      });
+      const lastResult = {
+        scanned: body.scanned ?? 0,
+        created: body.created ?? 0,
+        updated: body.updated ?? 0,
+        unchanged: body.unchanged ?? 0,
+        girlsReachedOut: body.girlsReachedOut ?? 0,
+        errors: Array.isArray(body.errors) ? body.errors.length : 0,
+        skippedNoWriteAccess: !!body.skippedNoWriteAccess,
+      };
+      const lastRunAt = body.syncedAt ?? new Date().toISOString();
+      setLoopsSync({ state: 'idle', error: null, lastResult, lastRunAt });
+      try { localStorage.setItem('attendance:lastSync:loops', JSON.stringify({ lastRunAt, lastResult })); } catch {}
     } catch (err) {
       setLoopsSync((s) => ({
         ...s,
@@ -251,17 +274,15 @@ export default function AttendancePage() {
       if (!res.ok) {
         throw new Error(body?.error ?? `Slack sync failed (${res.status})`);
       }
-      setSlackSync({
-        state: 'idle',
-        error: null,
-        lastResult: {
-          invited: body.invited ?? 0,
-          alreadyIn: body.alreadyIn ?? 0,
-          skippedNoSlackId: body.skippedNoSlackId ?? 0,
-          failed: body.failed ?? 0,
-        },
-        lastRunAt: body.syncedAt ?? new Date().toISOString(),
-      });
+      const lastResult = {
+        invited: body.invited ?? 0,
+        alreadyIn: body.alreadyIn ?? 0,
+        skippedNoSlackId: body.skippedNoSlackId ?? 0,
+        failed: body.failed ?? 0,
+      };
+      const lastRunAt = body.syncedAt ?? new Date().toISOString();
+      setSlackSync({ state: 'idle', error: null, lastResult, lastRunAt });
+      try { localStorage.setItem('attendance:lastSync:slack', JSON.stringify({ lastRunAt, lastResult })); } catch {}
     } catch (err) {
       setSlackSync((s) => ({
         ...s,
