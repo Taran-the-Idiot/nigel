@@ -131,6 +131,7 @@ model User {
   attendanceAuditActions  AttendanceAuditEntry[] @relation("AttendanceAuditActor")
   attendanceRemindersCreated AttendanceReminder[] @relation("AttendanceReminderAuthor")
   attendanceCandidatesCreated AttendanceCandidate[] @relation("AttendanceCandidateCreator")
+  syncRunLogs                 SyncRunLog[]             @relation("SyncRunLogActor")
 
   // Inventory relations
   teamId       String?
@@ -1087,4 +1088,21 @@ model AttendanceReminder {
   @@index([candidateId])
   @@index([dueAt])
   @@map("attendance_reminder")
+}
+
+// History of admin-triggered external sync runs (attend cache refresh, slack
+// channel invites, loops categories airtable push). One row per successful
+// run; the dashboard reads `findFirst` ordered by createdAt desc to show
+// "last sync N min ago" across all admins. Failures are not logged here —
+// only successful round-trips, so the timestamp is meaningful.
+model SyncRunLog {
+  id        String   @id @default(cuid())
+  syncKey   String   // 'attend' | 'slack' | 'loops_categories'
+  result    Json?    // arbitrary per-sync summary (counts, etc.)
+  actorId   String?
+  actor     User?    @relation("SyncRunLogActor", fields: [actorId], references: [id], onDelete: SetNull)
+  createdAt DateTime @default(now())
+
+  @@index([syncKey, createdAt])
+  @@map("sync_run_log")
 }

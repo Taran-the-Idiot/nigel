@@ -14,6 +14,47 @@ import { useRoles, Permission, Role } from '@/lib/hooks/useRoles';
 
 type ViewMode = 'kanban' | 'table' | 'sourcing';
 
+// Helpers to coerce the JSON blob stored in `sync_run_log.result` back into
+// the shapes the dropdown expects. They're permissive — extra/missing fields
+// are tolerated so old log rows still render after a result-shape change.
+function asObj(v: unknown): Record<string, unknown> {
+  return v && typeof v === 'object' ? (v as Record<string, unknown>) : {};
+}
+function asNum(v: unknown): number {
+  return typeof v === 'number' && Number.isFinite(v) ? v : 0;
+}
+function parseAttendResult(v: unknown): { scanned: number; updated: number; bumped: number; created: number; errors: number } {
+  const o = asObj(v);
+  return {
+    scanned: asNum(o.scanned),
+    updated: asNum(o.updated),
+    bumped: asNum(o.bumped),
+    created: asNum(o.created),
+    errors: asNum(o.errorCount ?? o.errors),
+  };
+}
+function parseSlackResult(v: unknown): { invited: number; alreadyIn: number; skippedNoSlackId: number; failed: number } {
+  const o = asObj(v);
+  return {
+    invited: asNum(o.invited),
+    alreadyIn: asNum(o.alreadyIn),
+    skippedNoSlackId: asNum(o.skippedNoSlackId),
+    failed: asNum(o.failed),
+  };
+}
+function parseLoopsResult(v: unknown): { scanned: number; created: number; updated: number; unchanged: number; girlsReachedOut: number; errors: number; skippedNoWriteAccess: boolean } {
+  const o = asObj(v);
+  return {
+    scanned: asNum(o.scanned),
+    created: asNum(o.created),
+    updated: asNum(o.updated),
+    unchanged: asNum(o.unchanged),
+    girlsReachedOut: asNum(o.girlsReachedOut),
+    errors: asNum(o.errorCount ?? o.errors),
+    skippedNoWriteAccess: !!o.skippedNoWriteAccess,
+  };
+}
+
 interface FilterState {
   q: string;
   status: string;        // '' = all (table only)
@@ -126,30 +167,6 @@ export default function AttendancePage() {
     setHideChrome(stored);
   }, []);
 
-  // Hydrate last-sync state for slack & loops from localStorage. Attend already
-  // has a server-side "last sync" via attendCachedAt on each row; the other two
-  // have nothing canonical to read, so we persist the most recent in-browser
-  // run to give users a usable "I last synced ago" hint across reloads.
-  useEffect(() => {
-    try {
-      const slack = localStorage.getItem('attendance:lastSync:slack');
-      if (slack) {
-        const parsed = JSON.parse(slack);
-        if (parsed?.lastRunAt) {
-          setSlackSync((s) => ({ ...s, lastRunAt: parsed.lastRunAt, lastResult: parsed.lastResult ?? null }));
-        }
-      }
-      const loops = localStorage.getItem('attendance:lastSync:loops');
-      if (loops) {
-        const parsed = JSON.parse(loops);
-        if (parsed?.lastRunAt) {
-          setLoopsSync((s) => ({ ...s, lastRunAt: parsed.lastRunAt, lastResult: parsed.lastResult ?? null }));
-        }
-      }
-    } catch {
-      // Bad JSON or storage error — ignore, the UI just falls back to "—".
-    }
-  }, []);
   useEffect(() => {
     const html = document.documentElement;
     if (hideChrome) html.classList.add('hide-admin-chrome');
@@ -198,6 +215,33 @@ export default function AttendancePage() {
       setRows(rowsJ.items ?? []);
       setStipendSummary(rowsJ.stipendSummary ?? null);
       setAdmins(adminsJ.items ?? []);
+      // Seed the three sync states with the most-recent server-side run per
+      // syncKey so the dropdown shows "last sync N min ago" across all admins.
+      // Only fills in fields not already populated by a sync the current
+      // session ran (we never want to clobber fresh in-flight state with a
+      // stale row from the database).
+      const runs: Array<{ syncKey: string; lastRunAt: string; result: unknown }> = rowsJ.latestSyncRuns ?? [];
+      for (const r of runs) {
+        if (r.syncKey === 'attend') {
+          setSyncAll((s) => s.lastResult ? s : {
+            ...s,
+            lastRunAt: r.lastRunAt,
+            lastResult: parseAttendResult(r.result),
+          });
+        } else if (r.syncKey === 'slack') {
+          setSlackSync((s) => s.lastResult ? s : {
+            ...s,
+            lastRunAt: r.lastRunAt,
+            lastResult: parseSlackResult(r.result),
+          });
+        } else if (r.syncKey === 'loops_categories') {
+          setLoopsSync((s) => s.lastResult ? s : {
+            ...s,
+            lastRunAt: r.lastRunAt,
+            lastResult: parseLoopsResult(r.result),
+          });
+        }
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed');
     } finally {
@@ -256,7 +300,6 @@ export default function AttendancePage() {
       };
       const lastRunAt = body.syncedAt ?? new Date().toISOString();
       setLoopsSync({ state: 'idle', error: null, lastResult, lastRunAt });
-      try { localStorage.setItem('attendance:lastSync:loops', JSON.stringify({ lastRunAt, lastResult })); } catch {}
     } catch (err) {
       setLoopsSync((s) => ({
         ...s,
@@ -282,7 +325,6 @@ export default function AttendancePage() {
       };
       const lastRunAt = body.syncedAt ?? new Date().toISOString();
       setSlackSync({ state: 'idle', error: null, lastResult, lastRunAt });
-      try { localStorage.setItem('attendance:lastSync:slack', JSON.stringify({ lastRunAt, lastResult })); } catch {}
     } catch (err) {
       setSlackSync((s) => ({
         ...s,

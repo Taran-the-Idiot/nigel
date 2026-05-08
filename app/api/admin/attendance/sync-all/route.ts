@@ -4,6 +4,7 @@ import { requirePermission } from "@/lib/admin-auth"
 import { Permission } from "@/lib/permissions"
 import { syncCandidatesAgainstAttend, importNewAttendCandidates } from "@/lib/attend-sync"
 import { getAttendPool } from "@/lib/attend-db"
+import { recordSyncRun } from "@/lib/sync-run-log"
 
 export const dynamic = "force-dynamic"
 export const maxDuration = 120
@@ -31,6 +32,14 @@ export async function POST(_request: NextRequest) {
 
   const importResult = await importNewAttendCandidates(prisma)
   const syncResult = await syncCandidatesAgainstAttend(prisma, { actorLabel: "manual" })
+
+  await recordSyncRun('attend', {
+    created: importResult.created,
+    scanned: syncResult.scanned,
+    updated: syncResult.updated,
+    bumped: syncResult.bumped,
+    errorCount: importResult.errors.length + syncResult.errors.length,
+  }, authCheck.session?.user.id ?? null)
 
   return NextResponse.json({
     created: importResult.created,

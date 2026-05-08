@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { requirePermission } from '@/lib/admin-auth';
 import { Permission } from '@/lib/permissions';
 import { syncLoopsCategories } from '@/lib/loops-categories';
+import { recordSyncRun } from '@/lib/sync-run-log';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 120;
@@ -21,6 +22,15 @@ export async function POST() {
 
   try {
     const result = await syncLoopsCategories();
+    await recordSyncRun('loops_categories', {
+      scanned: result.scanned,
+      created: result.created,
+      updated: result.updated,
+      unchanged: result.unchanged,
+      girlsReachedOut: result.girlsReachedOut,
+      skippedNoWriteAccess: result.skippedNoWriteAccess,
+      errorCount: result.errors.length,
+    }, authCheck.session?.user.id ?? null);
     return NextResponse.json({ ...result, syncedAt: new Date().toISOString() });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);

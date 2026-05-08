@@ -8,6 +8,7 @@ import { getDerivedStatsBatch } from "@/lib/attendance"
 import { decryptUserAddress } from "@/lib/pii"
 import { deriveAttendDisplayState } from "@/lib/attend-sync"
 import { getNeedBasedStipendLookup, findStipend, airtableStipendUrl } from "@/lib/need-based-stipends"
+import { getLatestSyncRuns } from "@/lib/sync-run-log"
 
 const VALID_SOURCES: AttendanceCandidateSource[] = ["STASIS_USER", "REVIEWER_INCENTIVE", "EXTERNAL_HC", "DISCRETION"]
 
@@ -43,7 +44,7 @@ export async function GET() {
     },
   })
 
-  const [statsByCandidate, lastComms, stipendLookup] = await Promise.all([
+  const [statsByCandidate, lastComms, stipendLookup, latestSyncRuns] = await Promise.all([
     getDerivedStatsBatch(
       candidates.map((c) => ({ id: c.id, userId: c.userId, source: c.source }))
     ),
@@ -54,6 +55,7 @@ export async function GET() {
       select: { candidateId: true, createdAt: true, text: true, authorId: true },
     }),
     getNeedBasedStipendLookup().catch(() => null),
+    getLatestSyncRuns(),
   ])
 
   const lastCommsByCandidate = new Map(lastComms.map((c) => [c.candidateId, c]))
@@ -149,7 +151,7 @@ export async function GET() {
     }
   })()
 
-  return NextResponse.json({ items, stipendSummary })
+  return NextResponse.json({ items, stipendSummary, latestSyncRuns })
 }
 
 /**

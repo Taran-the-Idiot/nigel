@@ -2,6 +2,7 @@ import { NextResponse } from "next/server"
 import prisma from "@/lib/prisma"
 import { requirePermission } from "@/lib/admin-auth"
 import { Permission } from "@/lib/permissions"
+import { recordSyncRun } from "@/lib/sync-run-log"
 
 export const dynamic = "force-dynamic"
 export const maxDuration = 120
@@ -75,6 +76,14 @@ export async function POST() {
   const invited = results.filter((r) => r.status === "invited").length
   const alreadyIn = results.filter((r) => r.status === "already_in").length
   const failed = results.filter((r) => r.status === "failed").length
+
+  await recordSyncRun('slack', {
+    total: candidates.length,
+    invited,
+    alreadyIn,
+    skippedNoSlackId,
+    failed,
+  }, authCheck.session?.user.id ?? null)
 
   return NextResponse.json({
     channel: CHANNEL_ID,
