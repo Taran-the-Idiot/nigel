@@ -275,7 +275,7 @@ function ScheduleContent() {
   const live = now >= EVENT_START && now <= EVENT_END;
 
   return (
-    <div className="bg-[linear-gradient(#DAD2BF99,#DAD2BF99),url(/noise-smooth.png)] font-mono text-brown-800 bg-container overflow-x-hidden">
+    <div className="bg-[linear-gradient(#DAD2BF99,#DAD2BF99),url(/noise-smooth.png)] font-sans text-brown-800 bg-container overflow-x-hidden">
       <style jsx>{`
         .bg-container::before {
           content: '';
