@@ -289,6 +289,9 @@ export default function AttendancePage() {
       if (!res.ok) {
         throw new Error(body?.error ?? `Loops sync failed (${res.status})`);
       }
+      if (Array.isArray(body.errors) && body.errors.length > 0) {
+        console.error('[loops-categories sync] errors:', body.errors);
+      }
       const lastResult = {
         scanned: body.scanned ?? 0,
         created: body.created ?? 0,
@@ -301,6 +304,7 @@ export default function AttendancePage() {
       const lastRunAt = body.syncedAt ?? new Date().toISOString();
       setLoopsSync({ state: 'idle', error: null, lastResult, lastRunAt });
     } catch (err) {
+      console.error('[loops-categories sync] failed:', err);
       setLoopsSync((s) => ({
         ...s,
         state: 'error',
