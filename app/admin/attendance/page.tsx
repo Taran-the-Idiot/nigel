@@ -110,6 +110,12 @@ export default function AttendancePage() {
     lastResult: { invited: number; alreadyIn: number; skippedNoSlackId: number; failed: number } | null;
     lastRunAt: string | null;
   }>({ state: 'idle', error: null, lastResult: null, lastRunAt: null });
+  const [loopsSync, setLoopsSync] = useState<{
+    state: 'idle' | 'running' | 'error';
+    error: string | null;
+    lastResult: { scanned: number; created: number; updated: number; unchanged: number; girlsReachedOut: number; errors: number; skippedNoWriteAccess: boolean } | null;
+    lastRunAt: string | null;
+  }>({ state: 'idle', error: null, lastResult: null, lastRunAt: null });
 
   const searchRef = useRef<HTMLInputElement | null>(null);
 
@@ -205,6 +211,37 @@ export default function AttendancePage() {
       }));
     }
   }, [load]);
+
+  const runLoopsSync = useCallback(async () => {
+    setLoopsSync((s) => ({ ...s, state: 'running', error: null }));
+    try {
+      const res = await fetch('/api/admin/attendance/sync-loops-categories', { method: 'POST' });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(body?.error ?? `Loops sync failed (${res.status})`);
+      }
+      setLoopsSync({
+        state: 'idle',
+        error: null,
+        lastResult: {
+          scanned: body.scanned ?? 0,
+          created: body.created ?? 0,
+          updated: body.updated ?? 0,
+          unchanged: body.unchanged ?? 0,
+          girlsReachedOut: body.girlsReachedOut ?? 0,
+          errors: Array.isArray(body.errors) ? body.errors.length : 0,
+          skippedNoWriteAccess: !!body.skippedNoWriteAccess,
+        },
+        lastRunAt: body.syncedAt ?? new Date().toISOString(),
+      });
+    } catch (err) {
+      setLoopsSync((s) => ({
+        ...s,
+        state: 'error',
+        error: err instanceof Error ? err.message : 'Loops sync failed',
+      }));
+    }
+  }, []);
 
   const runSlackSync = useCallback(async () => {
     setSlackSync((s) => ({ ...s, state: 'running', error: null }));
@@ -463,21 +500,66 @@ export default function AttendancePage() {
               { value: 'sourcing', label: 'Sourcing' },
             ]}
           />
-          <SyncAllButton
-            state={syncAll.state}
-            error={syncAll.error}
-            lastResult={syncAll.lastResult}
-            lastRunAt={syncAll.lastRunAt ?? newestServerSync}
-            onRun={runSyncAll}
-            onDismissError={() => setSyncAll((s) => ({ ...s, state: 'idle', error: null }))}
-          />
-          <SlackSyncButton
-            state={slackSync.state}
-            error={slackSync.error}
-            lastResult={slackSync.lastResult}
-            lastRunAt={slackSync.lastRunAt}
-            onRun={runSlackSync}
-            onDismissError={() => setSlackSync((s) => ({ ...s, state: 'idle', error: null }))}
+          <SyncMenu
+            entries={[
+              {
+                key: 'attend',
+                label: 'Sync attend',
+                description: 'Refresh cached state from attend.hackclub.com',
+                state: syncAll.state,
+                error: syncAll.error,
+                lastRunAt: syncAll.lastRunAt ?? newestServerSync,
+                status: syncAll.lastResult ? (
+                  <>
+                    {syncAll.lastResult.created > 0 ? <><span className="text-green-400">{syncAll.lastResult.created} created</span> · </> : null}
+                    {syncAll.lastResult.updated} updated · {syncAll.lastResult.bumped} bumped
+                    {syncAll.lastResult.errors > 0 ? <span className="text-red-400"> · {syncAll.lastResult.errors} errors</span> : null}
+                  </>
+                ) : null,
+                onRun: runSyncAll,
+                onDismissError: () => setSyncAll((s) => ({ ...s, state: 'idle', error: null })),
+              },
+              {
+                key: 'slack',
+                label: 'Sync slack',
+                description: 'Add CONFIRMED_YES + BOOKED_FLIGHT to attendees Slack',
+                state: slackSync.state,
+                error: slackSync.error,
+                lastRunAt: slackSync.lastRunAt,
+                status: slackSync.lastResult ? (
+                  <>
+                    <span className="text-green-400">{slackSync.lastResult.invited} added</span>
+                    {' · '}{slackSync.lastResult.alreadyIn} already in
+                    {slackSync.lastResult.skippedNoSlackId > 0 ? <> · {slackSync.lastResult.skippedNoSlackId} no slack</> : null}
+                    {slackSync.lastResult.failed > 0 ? <span className="text-red-400"> · {slackSync.lastResult.failed} failed</span> : null}
+                  </>
+                ) : null,
+                onRun: runSlackSync,
+                onDismissError: () => setSlackSync((s) => ({ ...s, state: 'idle', error: null })),
+              },
+              {
+                key: 'loops',
+                label: 'Sync loops',
+                description: 'Push attendance emails to Airtable Loops Categories',
+                state: loopsSync.state,
+                error: loopsSync.error,
+                lastRunAt: loopsSync.lastRunAt,
+                status: loopsSync.lastResult ? (
+                  loopsSync.lastResult.skippedNoWriteAccess ? (
+                    <span className="text-yellow-400">read-only PAT (expected on dev)</span>
+                  ) : (
+                    <>
+                      <span className="text-green-400">{loopsSync.lastResult.girlsReachedOut} girls tagged</span>
+                      {loopsSync.lastResult.created > 0 ? <> · {loopsSync.lastResult.created} new</> : null}
+                      {loopsSync.lastResult.updated > 0 ? <> · {loopsSync.lastResult.updated} updated</> : null}
+                      {loopsSync.lastResult.errors > 0 ? <span className="text-red-400"> · {loopsSync.lastResult.errors} errors</span> : null}
+                    </>
+                  )
+                ) : null,
+                onRun: runLoopsSync,
+                onDismissError: () => setLoopsSync((s) => ({ ...s, state: 'idle', error: null })),
+              },
+            ]}
           />
           <button
             onClick={() => setAdding(true)}
@@ -646,94 +728,139 @@ export default function AttendancePage() {
  * attendCachedAt across all rows when we haven't run a manual sync this
  * session. Errors render inline next to the button with a dismiss control.
  */
-function SyncAllButton({
-  state, error, lastResult, lastRunAt, onRun, onDismissError,
-}: Readonly<{
+interface SyncEntry {
+  key: string;
+  label: string;
+  description: string;
   state: 'idle' | 'running' | 'error';
   error: string | null;
-  lastResult: { scanned: number; updated: number; bumped: number; created: number; errors: number } | null;
   lastRunAt: string | null;
+  status: React.ReactNode | null;
   onRun: () => void;
   onDismissError: () => void;
-}>) {
-  const running = state === 'running';
-  return (
-    <div className="flex items-center gap-2">
-      {error ? (
-        <div className="flex items-center gap-1 text-xs text-red-400">
-          <span className="max-w-[18rem] truncate" title={error}>{error}</span>
-          <button
-            type="button"
-            onClick={onDismissError}
-            aria-label="Dismiss error"
-            className="text-cream-300 hover:text-cream-50 cursor-pointer px-1"
-          >×</button>
-        </div>
-      ) : lastResult ? (
-        <span className="text-xs text-cream-300 tabular-nums" aria-live="polite">
-          Last sync: {lastRunAt ? relativeTime(lastRunAt) : '—'}
-          {lastResult.created > 0 ? <> · <span className="text-green-400">{lastResult.created} created</span></> : null}
-          {' · '}{lastResult.updated} updated · {lastResult.bumped} bumped
-          {lastResult.errors > 0 ? <span className="text-red-400"> · {lastResult.errors} errors</span> : null}
-        </span>
-      ) : lastRunAt ? (
-        <span className="text-xs text-cream-300 tabular-nums">
-          Last sync: {relativeTime(lastRunAt)}
-        </span>
-      ) : null}
-      <button
-        type="button"
-        onClick={onRun}
-        disabled={running}
-        className="text-xs uppercase tracking-widest font-medium px-3 py-2 bg-brown-800 text-cream-200 hover:text-cream-50 disabled:opacity-40 cursor-pointer transition-[color,background-color] duration-150 active:scale-[0.97]"
-      >{running ? 'Syncing…' : 'Resync attend'}</button>
-    </div>
-  );
 }
 
 /**
- * Adds confirmed-yes + booked-flight candidates into the attendees Slack
- * channel. Additive only — never removes existing members.
+ * Single dropdown that consolidates every external sync (attend / slack /
+ * loops). One trigger in the header, one panel listing each sync as a row
+ * with run button, last-run timestamp, and the latest result line. Errors
+ * appear inline under the row and can be dismissed without re-running.
  */
-function SlackSyncButton({
-  state, error, lastResult, lastRunAt, onRun, onDismissError,
-}: Readonly<{
-  state: 'idle' | 'running' | 'error';
-  error: string | null;
-  lastResult: { invited: number; alreadyIn: number; skippedNoSlackId: number; failed: number } | null;
-  lastRunAt: string | null;
-  onRun: () => void;
-  onDismissError: () => void;
-}>) {
-  const running = state === 'running';
+function SyncMenu({ entries }: Readonly<{ entries: SyncEntry[] }>) {
+  const [open, setOpen] = useState(false);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    function onDown(e: MouseEvent) {
+      const t = e.target as Node;
+      if (triggerRef.current?.contains(t)) return;
+      if (menuRef.current?.contains(t)) return;
+      setOpen(false);
+    }
+    function onKey(e: KeyboardEvent) {
+      if (e.key === 'Escape') {
+        e.stopPropagation();
+        setOpen(false);
+        triggerRef.current?.focus();
+      }
+    }
+    window.addEventListener('mousedown', onDown);
+    window.addEventListener('keydown', onKey, true);
+    return () => {
+      window.removeEventListener('mousedown', onDown);
+      window.removeEventListener('keydown', onKey, true);
+    };
+  }, [open]);
+
+  const anyRunning = entries.some((e) => e.state === 'running');
+  const anyError = entries.some((e) => e.state === 'error');
+  // Most recent successful sync across all entries — what users glance at
+  // when the menu is closed.
+  const newestRunAt = useMemo(() => {
+    let max = 0;
+    for (const e of entries) {
+      if (!e.lastRunAt) continue;
+      const t = Date.parse(e.lastRunAt);
+      if (t > max) max = t;
+    }
+    return max > 0 ? new Date(max).toISOString() : null;
+  }, [entries]);
+
+  // Color hint on the trigger so people notice errors without opening it.
+  const triggerStateCls = anyError
+    ? 'text-red-300'
+    : anyRunning
+    ? 'text-orange-300'
+    : 'text-cream-200 hover:text-cream-50';
+
   return (
-    <div className="flex items-center gap-2">
-      {error ? (
-        <div className="flex items-center gap-1 text-xs text-red-400">
-          <span className="max-w-[18rem] truncate" title={error}>{error}</span>
-          <button
-            type="button"
-            onClick={onDismissError}
-            aria-label="Dismiss error"
-            className="text-cream-300 hover:text-cream-50 cursor-pointer px-1"
-          >×</button>
-        </div>
-      ) : lastResult ? (
-        <span className="text-xs text-cream-300 tabular-nums" aria-live="polite">
-          Slack: {lastRunAt ? relativeTime(lastRunAt) : '—'}
-          {' · '}<span className="text-green-400">{lastResult.invited} added</span>
-          {' · '}{lastResult.alreadyIn} already in
-          {lastResult.skippedNoSlackId > 0 ? <> · {lastResult.skippedNoSlackId} no slack</> : null}
-          {lastResult.failed > 0 ? <span className="text-red-400"> · {lastResult.failed} failed</span> : null}
-        </span>
-      ) : null}
+    <div className="relative">
       <button
+        ref={triggerRef}
         type="button"
-        onClick={onRun}
-        disabled={running}
-        title="Add CONFIRMED_YES + BOOKED_FLIGHT candidates to the attendees Slack channel (additive only)"
-        className="text-xs uppercase tracking-widest font-medium px-3 py-2 bg-brown-800 text-cream-200 hover:text-cream-50 disabled:opacity-40 cursor-pointer transition-[color,background-color] duration-150 active:scale-[0.97]"
-      >{running ? 'Inviting…' : 'Sync slack'}</button>
+        onClick={() => setOpen((v) => !v)}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        className={`inline-flex items-center gap-2 text-xs uppercase tracking-widest font-medium px-3 py-2 bg-brown-800 cursor-pointer transition-[color,background-color] duration-150 active:scale-[0.97] ${triggerStateCls}`}
+      >
+        <span>{anyRunning ? 'Syncing…' : 'Sync'}</span>
+        {anyRunning ? <span className="w-1.5 h-1.5 bg-orange-400 animate-pulse" aria-hidden /> : null}
+        {!anyRunning && anyError ? <span className="w-1.5 h-1.5 bg-red-400" aria-hidden /> : null}
+        {!anyRunning && !anyError && newestRunAt ? (
+          <span className="text-cream-400 normal-case tracking-normal tabular-nums">{relativeTime(newestRunAt)}</span>
+        ) : null}
+        <span className={`text-[9px] leading-none transition-transform ${open ? 'rotate-180' : ''}`} aria-hidden>▼</span>
+      </button>
+
+      {open ? (
+        <div
+          ref={menuRef}
+          role="menu"
+          className="absolute right-0 top-full mt-1 z-40 w-[26rem] bg-brown-900 outline outline-1 -outline-offset-1 outline-cream-200/15 shadow-[0_8px_24px_rgba(0,0,0,0.5)]"
+        >
+          <ul className="divide-y divide-cream-200/10">
+            {entries.map((e) => {
+              const running = e.state === 'running';
+              return (
+                <li key={e.key} className="p-3 flex flex-col gap-1.5">
+                  <div className="flex items-center gap-3">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-medium text-cream-100">{e.label}</span>
+                        {e.lastRunAt ? (
+                          <span className="text-[10px] text-cream-400 tabular-nums">{relativeTime(e.lastRunAt)}</span>
+                        ) : null}
+                      </div>
+                      <div className="text-[11px] text-cream-400 mt-0.5">{e.description}</div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={e.onRun}
+                      disabled={running}
+                      className="shrink-0 text-[11px] uppercase tracking-widest font-medium px-2.5 py-1.5 bg-brown-800 text-cream-200 hover:text-cream-50 disabled:opacity-40 cursor-pointer transition-[color,background-color] duration-150 active:scale-[0.97]"
+                    >{running ? '…' : 'Run'}</button>
+                  </div>
+                  {e.error ? (
+                    <div className="flex items-start gap-1 text-[11px] text-red-400">
+                      <span className="flex-1 break-words">{e.error}</span>
+                      <button
+                        type="button"
+                        onClick={e.onDismissError}
+                        aria-label="Dismiss error"
+                        className="text-cream-300 hover:text-cream-50 cursor-pointer px-1 shrink-0"
+                      >×</button>
+                    </div>
+                  ) : e.status ? (
+                    <div className="text-[11px] text-cream-300 tabular-nums" aria-live="polite">{e.status}</div>
+                  ) : null}
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      ) : null}
     </div>
   );
 }
