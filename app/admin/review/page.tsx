@@ -8,6 +8,7 @@ import { projects as starterProjects } from '@/app/starter-projects/projects';
 import { useHotkeys, type HotkeyBinding } from '@/lib/hotkeys';
 import HotkeyOverlay from '@/app/components/HotkeyOverlay';
 import { useToast } from '@/app/components/Toast';
+import { STATUS_LABEL, statusBg, type AttendanceStatus } from '@/app/admin/attendance/lib/types';
 
 interface ReviewAuthor {
   id: string;
@@ -40,6 +41,7 @@ interface QueueItem {
   reviewCount: number;
   sheHerUS: boolean;
   attendingEvent?: boolean;
+  attendanceStatus?: AttendanceStatus | null;
   region?: 'na' | 'eu' | 'other' | null;
 }
 
@@ -654,7 +656,15 @@ export default function ReviewQueuePage() {
                               {item.preReviewed && data.isAdmin && (
                                 <span className="text-xs text-orange-500 uppercase">Pre-reviewed</span>
                               )}
-                              {item.attendingEvent && (
+                              {item.attendanceStatus ? (
+                                <Link
+                                  href={`/admin/attendance?focus=${encodeURIComponent(item.author.id)}`}
+                                  title={`Attendance: ${STATUS_LABEL[item.attendanceStatus]} — click to open in /admin/attendance`}
+                                  className={`text-[10px] uppercase px-1 py-0.5 ${statusBg(item.attendanceStatus)}`}
+                                >
+                                  {STATUS_LABEL[item.attendanceStatus]}
+                                </Link>
+                              ) : item.attendingEvent && (
                                 <span title="Attending the in-person event" className="text-[10px] uppercase px-1 py-0.5 bg-orange-500/20 text-orange-300 border border-orange-500/40">
                                   Attending
                                 </span>

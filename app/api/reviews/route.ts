@@ -140,7 +140,13 @@ export async function GET(request: NextRequest) {
   const findArgs = {
     where: projectWhere,
     include: {
-      user: { select: { id: true, name: true, email: true, image: true, pronouns: true, encryptedAddressCountry: true, eventPreference: true, stasisAttendPlanning: true } },
+      user: {
+        select: {
+          id: true, name: true, email: true, image: true, pronouns: true,
+          encryptedAddressCountry: true, eventPreference: true, stasisAttendPlanning: true,
+          attendanceCandidate: { select: { outreachStatus: true } },
+        },
+      },
       workSessions: { select: { id: true, hoursClaimed: true, hoursApproved: true, createdAt: true } },
       bomItems: { select: { id: true, totalCost: true, status: true } },
       submissions: {
@@ -243,6 +249,8 @@ export async function GET(request: NextRequest) {
       starterProjectId: project.starterProjectId,
       sheHerUS: isSheHer && isUS,
       attendingEvent,
+      // Admin-only: kanban outreach status from /admin/attendance.
+      attendanceStatus: isAdmin ? (project.user.attendanceCandidate?.outreachStatus ?? null) : null,
       region,
     }
   })
