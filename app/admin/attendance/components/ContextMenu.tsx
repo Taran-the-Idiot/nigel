@@ -3,7 +3,7 @@
 import { ReactNode, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 
-export type SwatchColor = 'emerald' | 'blue' | 'purple' | 'pink' | 'orange' | 'yellow' | 'cream';
+export type SwatchColor = 'emerald' | 'blue' | 'purple' | 'pink' | 'orange' | 'yellow' | 'red';
 
 export interface MenuItem {
   type?: 'item' | 'separator' | 'submenu';
@@ -23,7 +23,7 @@ const SWATCH_BG: Record<SwatchColor, string> = {
   pink:    'bg-pink-400',
   orange:  'bg-orange-500',
   yellow:  'bg-yellow-500',
-  cream:   'bg-cream-200',
+  red:     'bg-red-500',
 };
 
 /** Right-click context menu for kanban cards. */

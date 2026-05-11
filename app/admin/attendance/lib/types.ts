@@ -285,7 +285,7 @@ export function formatDollars(cents: number | null | undefined): string {
  * This guarantees zero collisions until the admin count exceeds the palette
  * size — much better than the hash-mod approach, which collides as soon as
  * two ids land in the same bucket regardless of admin count. */
-const OWNER_PALETTE = ['emerald', 'blue', 'purple', 'pink', 'orange', 'yellow', 'cream'] as const
+const OWNER_PALETTE = ['emerald', 'blue', 'purple', 'pink', 'orange', 'yellow', 'red'] as const
 export type OwnerColor = typeof OWNER_PALETTE[number]
 
 export function ownerColor(id: string, admins: ReadonlyArray<{ id: string }>): OwnerColor {
@@ -310,7 +310,7 @@ export function ownerNameTextClass(id: string, admins: ReadonlyArray<{ id: strin
     case 'pink':    return 'text-pink-300'
     case 'orange':  return 'text-orange-300'
     case 'yellow':  return 'text-yellow-300'
-    case 'cream':   return 'text-cream-100'
+    case 'red':     return 'text-red-300'
   }
 }
 
