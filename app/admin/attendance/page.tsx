@@ -62,6 +62,9 @@ interface FilterState {
   source: string;        // '' = all
   girls: string;         // '' = all, 'girls', 'non-girls', 'unknown'
   attend: string;        // '' = all, 'invited' | 'wip' | 'complete' | 'none'
+  // '' = all (includes no-contact); 'fresh' | 'stale' | 'cold' from touchHealth.
+  // Any non-empty value excludes candidates with no last-outreach timestamp.
+  lastContact: string;
 }
 
 const DEFAULT_FILTERS: FilterState = {
@@ -71,6 +74,7 @@ const DEFAULT_FILTERS: FilterState = {
   source: '',
   girls: '',
   attend: '',
+  lastContact: '',
 };
 
 function readFiltersFromUrl(sp: URLSearchParams): FilterState {
@@ -81,6 +85,7 @@ function readFiltersFromUrl(sp: URLSearchParams): FilterState {
     source: sp.get('source') ?? '',
     girls: sp.get('girls') ?? '',
     attend: sp.get('attend') ?? '',
+    lastContact: sp.get('lastContact') ?? '',
   };
 }
 
@@ -190,6 +195,7 @@ export default function AttendancePage() {
       if (filters.source) sp.set('source', filters.source);
       if (filters.girls) sp.set('girls', filters.girls);
       if (filters.attend) sp.set('attend', filters.attend);
+      if (filters.lastContact) sp.set('lastContact', filters.lastContact);
       if (view !== 'kanban') sp.set('view', view);
       if (selectedId) sp.set('id', selectedId);
       if (view === 'sourcing' && sourcingSelected.size > 0) {
@@ -398,6 +404,15 @@ export default function AttendancePage() {
         const state = r.attendDisplayState;
         if (filters.attend === 'none' ? state !== null : state !== filters.attend) return false;
       }
+      if (filters.lastContact) {
+        // No comms ever → excluded whenever any lastContact value is selected.
+        if (!r.lastComms) return false;
+        const days = parseInt(filters.lastContact, 10);
+        if (Number.isFinite(days)) {
+          const ageDays = (Date.now() - new Date(r.lastComms.createdAt).getTime()) / 86_400_000;
+          if (ageDays < days) return false;
+        }
+      }
       return true;
     });
   }, [rows, filters, view]);
@@ -531,6 +546,7 @@ export default function AttendancePage() {
     if (f.source) sp.set('source', f.source);
     if (f.girls) sp.set('girls', f.girls);
     if (f.attend) sp.set('attend', f.attend);
+    if (f.lastContact) sp.set('lastContact', f.lastContact);
     if (target !== 'kanban') sp.set('view', target);
     const qs = sp.toString();
     return qs ? `${pathname}?${qs}` : pathname;
@@ -740,6 +756,20 @@ export default function AttendancePage() {
               { value: 'wip', label: 'Attend WIP', color: 'orange' },
               { value: 'complete', label: 'Attend complete', color: 'green' },
               { value: 'none', label: 'Not in Attend', color: 'brown' },
+            ]}
+          />
+        ) : null}
+        {showAttendFilter ? (
+          <ColorSelect
+            value={filters.lastContact}
+            onChange={(v) => setFilters((f) => ({ ...f, lastContact: v }))}
+            options={[
+              { value: '', label: 'Any last outreach' },
+              { value: '1', label: 'Last outreach ≥1d ago', color: 'green' },
+              { value: '3', label: 'Last outreach ≥3d ago', color: 'yellow' },
+              { value: '7', label: 'Last outreach ≥7d ago', color: 'orange' },
+              { value: '14', label: 'Last outreach ≥14d ago', color: 'red' },
+              { value: '30', label: 'Last outreach ≥30d ago', color: 'red' },
             ]}
           />
         ) : null}
