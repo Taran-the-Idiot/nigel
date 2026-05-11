@@ -99,7 +99,20 @@ interface RewardResponse {
   entries: RewardEntry[];
 }
 
-type StatsTab = 'weekly' | 'allTime' | 'comingToStasis' | 'fudgeHoodie';
+interface WindbreakerEntry {
+  reviewer: { id: string; name: string | null; image: string | null };
+  count: number;
+  tier: 'none' | 'windbreaker';
+}
+
+interface WindbreakerResponse {
+  start: string;
+  end: string;
+  windbreakerThreshold: number;
+  entries: WindbreakerEntry[];
+}
+
+type StatsTab = 'weekly' | 'allTime' | 'comingToStasis' | 'fudgeHoodie' | 'windbreaker';
 
 export default function ReviewQueuePage() {
   const router = useRouter();
@@ -117,6 +130,8 @@ export default function ReviewQueuePage() {
   const [region, setRegion] = useState<'' | 'na' | 'eu'>('');
   const [rewards, setRewards] = useState<RewardResponse | null>(null);
   const [rewardsLoading, setRewardsLoading] = useState(false);
+  const [windbreaker, setWindbreaker] = useState<WindbreakerResponse | null>(null);
+  const [windbreakerLoading, setWindbreakerLoading] = useState(false);
   const [hotkeyOverlayOpen, setHotkeyOverlayOpen] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
@@ -237,11 +252,24 @@ export default function ReviewQueuePage() {
     }
   }, []);
 
+  const fetchWindbreaker = useCallback(async () => {
+    setWindbreakerLoading(true);
+    try {
+      const res = await fetch('/api/reviews/windbreaker');
+      if (res.ok) setWindbreaker(await res.json());
+    } catch (err) {
+      console.error('Failed to fetch windbreaker stats:', err);
+    } finally {
+      setWindbreakerLoading(false);
+    }
+  }, []);
+
   useEffect(() => { fetchQueues(); }, [fetchQueues]);
   useEffect(() => { fetchStats(); }, [fetchStats]);
   useEffect(() => {
     if (statsTab === 'fudgeHoodie') fetchRewards();
-  }, [statsTab, fetchRewards]);
+    if (statsTab === 'windbreaker') fetchWindbreaker();
+  }, [statsTab, fetchRewards, fetchWindbreaker]);
 
   // Auto-load the next page when the sentinel scrolls into view.
   useEffect(() => {
@@ -361,10 +389,22 @@ export default function ReviewQueuePage() {
               >
                 Fudge & Hoodie
               </button>
+              <button
+                onClick={() => setStatsTab('windbreaker')}
+                className={`px-2 py-0.5 text-xs uppercase cursor-pointer ${
+                  statsTab === 'windbreaker'
+                    ? 'bg-orange-500 text-white'
+                    : 'bg-brown-900 text-cream-100 hover:bg-cream-500/10'
+                }`}
+              >
+                Windbreaker
+              </button>
             </div>
           </div>
           {statsTab === 'fudgeHoodie' ? (
             <FudgeHoodieStats rewards={rewards} loading={rewardsLoading} />
+          ) : statsTab === 'windbreaker' ? (
+            <WindbreakerStats stats={windbreaker} loading={windbreakerLoading} />
           ) : (
           <div className="flex gap-4 flex-wrap">
             {(statsTab === 'weekly' ? stats?.topReviewersWeekly : statsTab === 'comingToStasis' ? stats?.comingToStasis : stats?.topReviewersAllTime)?.map(
@@ -704,6 +744,49 @@ export default function ReviewQueuePage() {
         </>
       )}
     </>
+  );
+}
+
+function WindbreakerStats({ stats, loading }: Readonly<{ stats: WindbreakerResponse | null; loading: boolean }>) {
+  if (loading && !stats) {
+    return <span className="text-cream-200 text-sm">Loading...</span>;
+  }
+  if (!stats || stats.entries.length === 0) {
+    return <span className="text-cream-200 text-sm">No reviews in window yet</span>;
+  }
+
+  const fmtDate = (iso: string) =>
+    new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'America/New_York' });
+
+  return (
+    <div>
+      <p className="text-cream-300 text-[11px] mb-2">
+        {fmtDate(stats.start)} → {fmtDate(stats.end)} · Windbreaker: {stats.windbreakerThreshold}+
+      </p>
+      <div className="flex gap-3 gap-y-1 flex-wrap">
+        {stats.entries.map((entry, i) => (
+          <div key={entry.reviewer.id} className="flex items-center gap-2">
+            <span className="text-cream-200 text-xs">{i + 1}.</span>
+            {entry.reviewer.image && (
+              <img src={entry.reviewer.image} alt="" className="w-5 h-5 rounded-full" />
+            )}
+            <Link
+              href={`/admin/users?search=${encodeURIComponent(entry.reviewer.id)}`}
+              className="text-cream-50 text-sm hover:text-orange-400 transition-colors"
+            >
+              {entry.reviewer.name || 'Unknown'}
+            </Link>
+            <span className="text-orange-500 text-sm font-bold">
+              {entry.count}
+              <span className="text-cream-300 font-normal">/{stats.windbreakerThreshold}</span>
+            </span>
+            {entry.tier === 'windbreaker' && (
+              <span className="text-[10px] uppercase tracking-wider px-1.5 py-0.5 bg-orange-500 text-white">Windbreaker</span>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
   );
 }
 
