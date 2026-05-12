@@ -350,6 +350,43 @@ function ModalBody({
       </div>
 
       <div className="px-6 py-6 space-y-6">
+        {/* Identity — only editable for external candidates. Linked Stasis
+         * users' name/email/slackId live on the User row and are managed
+         * elsewhere (auth flow, /admin/users). */}
+        {c.isExternal ? (
+          <Section title="Identity" right={<span className="text-xs uppercase tracking-widest text-cream-300 font-medium">external candidate</span>}>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <Field label="Name">
+                <SmallTextInput
+                  value={c.name}
+                  placeholder="Full name"
+                  onSave={(v) => patch({ externalName: v }, 'externalName')}
+                  saving={savingField === 'externalName'}
+                  maxLength={200}
+                />
+              </Field>
+              <Field label="Email">
+                <SmallTextInput
+                  value={c.email}
+                  placeholder="email@example.com"
+                  onSave={(v) => patch({ externalEmail: v.toLowerCase() }, 'externalEmail')}
+                  saving={savingField === 'externalEmail'}
+                  maxLength={200}
+                />
+              </Field>
+              <Field label="Slack ID">
+                <SmallTextInput
+                  value={c.slackId}
+                  placeholder="U0A2SJ7B739"
+                  onSave={(v) => patch({ externalSlackId: v }, 'externalSlackId')}
+                  saving={savingField === 'externalSlackId'}
+                  maxLength={50}
+                />
+              </Field>
+            </div>
+          </Section>
+        ) : null}
+
         {/* Pipeline */}
         <Section title="Pipeline">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
