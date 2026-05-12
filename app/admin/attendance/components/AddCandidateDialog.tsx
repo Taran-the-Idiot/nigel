@@ -28,6 +28,7 @@ export function AddCandidateDialog({
   const [external, setExternal] = useState({ name: '', email: '', slackId: '' });
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [initialStatus, setInitialStatus] = useState<'IDENTIFIED' | 'CONTACTED'>('IDENTIFIED');
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => { inputRef.current?.focus(); }, []);
@@ -62,7 +63,7 @@ export function AddCandidateDialog({
       const res = await fetch(`/api/admin/attendance`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId }),
+        body: JSON.stringify({ userId, outreachStatus: initialStatus }),
       });
       const j = await res.json();
       if (!res.ok) throw new Error(j.error ?? 'Failed');
@@ -86,6 +87,7 @@ export function AddCandidateDialog({
           externalName: external.name.trim(),
           externalEmail: external.email.trim() || undefined,
           externalSlackId: external.slackId.trim() || undefined,
+          outreachStatus: initialStatus,
         }),
       });
       const j = await res.json();
@@ -108,6 +110,33 @@ export function AddCandidateDialog({
         </div>
 
         <div className="p-4 space-y-3">
+          <div>
+            <div className="text-[10px] uppercase tracking-widest font-medium text-cream-300 mb-1.5">Add as</div>
+            <div className="grid grid-cols-2 gap-px bg-brown-700">
+              {([
+                { value: 'IDENTIFIED', label: 'Sourcing pool' },
+                { value: 'CONTACTED', label: 'Reached out' },
+              ] as const).map((opt) => {
+                const active = initialStatus === opt.value;
+                return (
+                  <button
+                    key={opt.value}
+                    type="button"
+                    onClick={() => setInitialStatus(opt.value)}
+                    disabled={submitting}
+                    className={
+                      'px-3 py-2 text-xs uppercase tracking-widest font-medium cursor-pointer transition-colors disabled:cursor-not-allowed ' +
+                      (active
+                        ? 'bg-orange-500/20 text-orange-300'
+                        : 'bg-brown-800 text-cream-300 hover:bg-brown-700 hover:text-cream-50')
+                    }
+                  >
+                    {opt.label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
           {!externalMode ? (
             <>
               <input
