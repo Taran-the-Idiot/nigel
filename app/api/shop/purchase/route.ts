@@ -118,23 +118,51 @@ export async function POST(request: NextRequest) {
         throw new Error("INSUFFICIENT_BITS")
       }
 
-      // Create purchase transactions (one per unit for ledger consistency)
+      // Create purchase transactions (one per unit for ledger consistency).
+      // For pending-eligible items, drain the pending pool first (via a
+      // -DESIGN_APPROVED entry) and only debit confirmed via SHOP_PURCHASE
+      // for the remainder. Otherwise the ledger drops but pending stays put,
+      // making `balance − pending` go negative (see /admin/currency display).
+      const usesPendingPool = (PENDING_BITS_ELIGIBLE_IDS as readonly string[]).includes(itemId)
       let currentBalance = balance
+      let currentPending = pendingBits
       let lastTransactionId = ''
       for (let i = 0; i < quantity; i++) {
+        const fromPending = usesPendingPool ? Math.max(0, Math.min(item.bitsCost, currentPending)) : 0
+        const fromConfirmed = item.bitsCost - fromPending
+
+        if (fromPending > 0) {
+          await tx.currencyTransaction.create({
+            data: {
+              userId,
+              amount: -fromPending,
+              type: "DESIGN_APPROVED",
+              shopItemId: itemId,
+              note: `Pending bits used for ${item.name}`,
+              balanceBefore: currentBalance,
+              balanceAfter: currentBalance - fromPending,
+            },
+          })
+          currentBalance -= fromPending
+          currentPending -= fromPending
+        }
+
+        // Always create a SHOP_PURCHASE row (even at amount=0 when fully paid
+        // from pending) so the maxPerUser count and historical lookups keep
+        // working uniformly.
         const transaction = await tx.currencyTransaction.create({
           data: {
             userId,
-            amount: -item.bitsCost,
+            amount: -fromConfirmed,
             type: "SHOP_PURCHASE",
             shopItemId: itemId,
             note: `Purchased: ${item.name}`,
             balanceBefore: currentBalance,
-            balanceAfter: currentBalance - item.bitsCost,
+            balanceAfter: currentBalance - fromConfirmed,
           },
         })
         lastTransactionId = transaction.id
-        currentBalance -= item.bitsCost
+        currentBalance -= fromConfirmed
       }
 
       // Auto-remove purchased item from goal prizes

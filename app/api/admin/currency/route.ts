@@ -53,6 +53,7 @@ const ALLOWED_TYPES = [
   CurrencyTransactionType.ADMIN_GRANT,
   CurrencyTransactionType.ADMIN_DEDUCTION,
   CurrencyTransactionType.DESIGN_APPROVED,
+  CurrencyTransactionType.SHOP_REFUND,
 ] as const
 
 /**
@@ -102,7 +103,8 @@ export async function POST(request: NextRequest) {
     (amount > 0 ? CurrencyTransactionType.ADMIN_GRANT : CurrencyTransactionType.ADMIN_DEDUCTION)
 
   const trimmedNote = typeof note === "string" ? note.trim() : ""
-  const finalNote = trimmedNote ? `ADMIN GRANT: ${trimmedNote}` : "ADMIN GRANT"
+  const notePrefix = type === CurrencyTransactionType.SHOP_REFUND ? "ADMIN REFUND" : "ADMIN GRANT"
+  const finalNote = trimmedNote ? `${notePrefix}: ${trimmedNote}` : notePrefix
 
   const entry = await prisma.$transaction(async (tx) => {
     return appendLedgerEntry(tx, {

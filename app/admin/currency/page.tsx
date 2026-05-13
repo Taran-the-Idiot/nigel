@@ -7,7 +7,7 @@ interface LedgerEntry {
   userId: string;
   projectId: string | null;
   amount: number;
-  type: 'PROJECT_APPROVED' | 'DESIGN_APPROVED' | 'ADMIN_GRANT' | 'ADMIN_DEDUCTION' | 'SHOP_PURCHASE';
+  type: 'PROJECT_APPROVED' | 'DESIGN_APPROVED' | 'ADMIN_GRANT' | 'ADMIN_DEDUCTION' | 'SHOP_PURCHASE' | 'SHOP_REFUND';
   note: string | null;
   balanceBefore: number;
   balanceAfter: number;
@@ -22,6 +22,7 @@ const TYPE_LABELS: Record<LedgerEntry['type'], string> = {
   ADMIN_GRANT: 'Admin Grant',
   ADMIN_DEDUCTION: 'Admin Deduction',
   SHOP_PURCHASE: 'Shop Purchase',
+  SHOP_REFUND: 'Shop Refund',
 };
 
 export default function BitsLedgerPage() {
