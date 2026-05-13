@@ -45,19 +45,6 @@ export async function checkInventoryAccess(userId: string) {
     }
   }
 
-  if (process.env.INVENTORY_HIDDEN === "true") {
-    return {
-      allowed: false,
-      reason: "Inventory is unavailable",
-      isAdmin: false,
-      teamId: null,
-      teamName: null,
-      balance,
-      enabled,
-      ...config,
-    }
-  }
-
   if (!enabled) {
     return {
       allowed: false,
