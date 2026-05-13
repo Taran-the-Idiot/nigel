@@ -10,6 +10,10 @@ Stasis is a hackathon platform (Hack Club) built with Next.js 16 (App Router) + 
 
 Package manager: **yarn**. Local dev: `./dev.sh` (starts Postgres in Docker + dev server). Always run `yarn build` after code changes to verify no build errors. No test framework configured. Playwright screenshots go in `/tmp`.
 
+## Deploy
+
+Production runs on **Coolify**, deploying from the `prod` branch via the `Dockerfile` at the repo root. GitHub Actions (`.github/workflows/docker.yml`) builds an image to GHCR on push to `main` for caching/preview; Coolify itself pulls and rebuilds from `prod` for the live deploy. Use `/prod` to promote `main` → `prod`. Not Vercel.
+
 ## Architecture
 
 ### Structure
