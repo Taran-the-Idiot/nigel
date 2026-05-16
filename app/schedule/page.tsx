@@ -70,8 +70,8 @@ const SCHEDULE: ScheduleDay[] = [
     events: [
       { name: 'Breakfast', category: 'meal', startHour: 8, startMinute: 0, durationMinutes: 60 },
       { name: 'Workshop', category: 'interactive', startHour: 11, startMinute: 0, durationMinutes: 60 },
-      { name: 'Idea Demos', category: 'interactive', startHour: 12, startMinute: 0, durationMinutes: 60 },
       { name: 'Lunch & Walk to Downtown Austin', category: 'meal', startHour: 13, startMinute: 0, durationMinutes: 180 },
+      { name: 'Project Demos', category: 'interactive', startHour: 16, startMinute: 30, durationMinutes: 60 },
       { name: 'Workshop', category: 'interactive', startHour: 17, startMinute: 30, durationMinutes: 60 },
       { name: 'Dinner & Lightning Talks', category: 'meal', startHour: 19, startMinute: 0, durationMinutes: 60 },
       { name: 'Just Dance', category: 'social', startHour: 20, startMinute: 0, durationMinutes: 60 },
